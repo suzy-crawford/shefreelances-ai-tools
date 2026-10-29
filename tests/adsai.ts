@@ -401,6 +401,13 @@ mock(ME, (a: any) => { if (a.model) throw new Error('nope'); return { text: 'ok'
 r = await call({ task: 'rewrite', campaign: base, ad: concept(1), field: 'headline_1', text: 'Long headline', style: 'shorter' });
 check('rewrite: falls back to default model', r.status === 200 && r.data.text === 'ok' && g.__mock.calls.length === 2, r);
 
+// ---- photo prompt reads as one sentence; no worry hooks ----
+mock(ME, () => ({ concepts: [concept(1, { photo: { subject: 'A client relaxing in a treatment chair', setting: 'A bright, simple treatment room', action: 'A provider talks with her', mood: 'Calm', lighting: 'Soft window light', angle: 'Close medium shot', details: 'A small plant.', text_space: 'top' } }), concept(2, { photo: { subject: 'An AC unit', setting: 'IV room near the door', action: 'Dr. Lee checks it', mood: 'calm', lighting: 'x', angle: 'y', details: '', text_space: 'bottom' } }), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: base });
+check('photo: later parts lower-cased mid-sentence', /in a bright, simple treatment room, a provider talks with her, calm, soft window light, close medium shot/.test(r.data.concepts[0].image_prompt), r.data.concepts[0].image_prompt.slice(0, 200));
+check('photo: acronyms and names keep their capitals', /in IV room near the door, Dr\. Lee checks it/.test(r.data.concepts[1].image_prompt), r.data.concepts[1].image_prompt.slice(0, 120));
+check('viewer rule: no worry or fear openers', /Worried it will look fake\?/.test(lastPrompt()) && /Don't open with what the viewer worries about/.test(lastPrompt()) && !/taking away a worry/.test(g.__mock.calls.map((c: any) => c.prompt).join()), null);
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
 Deno.exit(fails.length ? 1 : 0);

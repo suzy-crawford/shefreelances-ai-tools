@@ -190,7 +190,7 @@ const VOICE = 'Write like a real person texting a friend about a place they like
 const FACTS_RULE = 'Facts about THIS business (prices, hours, staff, how they work, insurance, financing, warranties, how fast they respond, results, reviews, customer counts) must come from the answers above, or be a [placeholder in square brackets] (at most 2 per ad, in primary text only, never for reviews, ratings, results or customer counts), or be left out. General facts that are true of the service everywhere are fine and make the copy real (for example "wrinkle relaxers take about 2 weeks to settle", "most roof inspections take under an hour"), said as general facts, never as this business\'s promise. Never invent stories, quotes or claims about their customers ("our patients tell us", "every week someone walks in", "the #1 thing we hear"). A clearly hypothetical "Say you..." scenario is fine. Headlines, descriptions and the text on the image never contain [brackets].';
 const PROOF_RULE = 'Verified proof means only the Proof and Credentials answers. Never use these anywhere: best, most trusted, top-rated, #1, number one, leading, guaranteed, permanent, painless, pain-free, no downtime, or a promise of how long a result lasts. If there is no verified proof, don\'t write a trust or social proof ad.';
 const URGENCY_RULE = 'No fake urgency: never limited time, ends soon, spots filling up, last chance or today only unless the offer gives a real end date. Real calendar timing is fine ("holiday photos are about 6 weeks out", "before summer"). Keep "up to", "from", "starting at" and who the offer is for (like new patients only) exactly; a list of exclusions can be shortened to "some exclusions apply". No scare tactics or worst-case scenarios.';
-const VIEWER_RULE = 'Meta rejects ads that state or imply the viewer\'s personal traits. Never say or ask what the viewer is, has or feels about their body, health, weight, age, money, relationships or fears ("Are you overweight?", "You look tired", "Nervous about the dentist?", "women in their 40s"). Talk about situations, moments and the service instead ("Holiday photos coming up?", "Roof leaking again?", "Lunch-break appointment"). Use the target customer only to choose what matters, never to describe them.';
+const VIEWER_RULE = 'Meta rejects ads that state or imply the viewer\'s personal traits. Never say or ask what the viewer is, has or feels about their body, health, weight, age, money, relationships or fears ("Are you overweight?", "You look tired", "Nervous about the dentist?", "Worried it will look fake?", "Scared of needles?", "women in their 40s"). Don\'t open with what the viewer worries about, fears or feels. Talk about situations, moments and the service instead ("Holiday photos coming up?", "Roof leaking again?", "Lunch-break appointment"). Use the target customer only to choose what matters, never to describe them.';
 
 function campaignBlock(c: Campaign, plan: Plan, forAds = false) {
   return [
@@ -244,7 +244,9 @@ function imagePrompts(x: any, c: Campaign, plan: Plan, overlay: string, video: b
   // deno-lint-ignore no-explicit-any
   const p: any = x?.photo && typeof x.photo === 'object' ? x.photo : {};
   const pos = /top/i.test(str(p.text_space)) ? 'top' : 'bottom';
-  const bits = [clean(p.subject, 200) + (clean(p.setting, 200) ? ` in ${clean(p.setting, 200)}` : ''), clean(p.action, 200), clean(p.mood, 120), clean(p.lighting, 120), clean(p.angle, 120)].filter(Boolean);
+  // Parts after the subject continue the sentence, so "A bright room" becomes "a bright room" (acronyms stay).
+  const low = (v: string) => (/^[A-Z](?=[a-z]|\s)/.test(v) && !/^(I|Dr|Mr|Mrs|Ms)\b/.test(v) ? v[0].toLowerCase() + v.slice(1) : v);
+  const bits = [clean(p.subject, 200) + (clean(p.setting, 200) ? ` in ${low(clean(p.setting, 200))}` : ''), low(clean(p.action, 200)), low(clean(p.mood, 120)), low(clean(p.lighting, 120)), low(clean(p.angle, 120))].filter(Boolean);
   const scene = bits.length > 1 ? bits.join(', ') : clean(x?.creative_direction, 300) || clean(x?.image_prompt, 600);
   const details = clean(p.details, 400);
   const rules = imageRules(plan, c);
@@ -270,7 +272,7 @@ function nicheHints(c: Campaign) {
 const AD_PLANS = [
   ['an everyday problem or frustration this business solves', 'Problem, Agitate, Solve'],
   ['a moment, occasion or season coming up that makes now the time', 'Before, After, Bridge'],
-  ['what the first visit or first order is actually like, taking away a worry or a question', 'a short "Say you..." scenario'],
+  ['what the first visit or first order is actually like, answering a question people ask (describe the visit, never the viewer\'s feelings)', 'a short "Say you..." scenario'],
 ];
 
 function adsPrompt(c: Campaign, plan: Plan, n = 0) {
