@@ -305,6 +305,41 @@ check('adsAI file does not serve "form" (it lives in adsExtra)', plain.status ==
 const plain2 = await adsExtra(new Request('https://fn/', { method: 'POST', body: JSON.stringify({ task: 'ads', campaign: base }) }));
 check('adsExtra file does not serve "ads"', plain2.status === 400, plain2.status);
 
+// ---- where: miles, a whole state/region, a whole country ----
+p = await plan(base);
+check('area: default radius label + audience', p.area_type === 'radius' && p.area_label === 'Austin, TX + 10 miles' && /people in Austin, TX \+ 10 miles/.test(p.audience), p);
+p = await plan({ business_name: 'X', radius_miles: 15 });
+check('area: no city yet -> [city] blank', p.area_label === '[city] + 15 miles', p);
+p = await plan({ ...base, radius_miles: 50 });
+check('area: 50 miles allowed', p.radius_miles === 50 && p.area_label === 'Austin, TX + 50 miles', p);
+p = await plan({ ...base, radius_miles: 200 });
+check('area: radius capped at Meta max 50', p.radius_miles === 50, p);
+p = await plan({ business_name: 'Shop Co', business_type: 'ecommerce', product: 'candles', area_type: 'country', target_area: 'United States' });
+check('area: country -> All of United States, no miles', p.area_type === 'country' && p.area_label === 'All of United States' && /people in All of United States, no interests/.test(p.audience) && !/miles/.test(p.audience), p);
+check('area: ecommerce national gets no local warning', !p.notes.some((n: string) => /whole state or country/.test(n)), p.notes);
+p = await plan({ business_name: 'Coach Co', business_type: 'coaching', product: 'coaching', area_type: 'region', target_area: 'California' });
+check('area: region -> All of California', p.area_label === 'All of California' && /All of California/.test(p.audience), p);
+p = await plan({ business_name: 'X', business_type: 'coaching', area_type: 'country' });
+check('area: empty country -> [country] blank, no crash', p.area_label === 'All of [country]', p);
+p = await plan({ ...base, area_type: 'nonsense' });
+check('area: bad type falls back to radius', p.area_type === 'radius', p);
+p = await plan({ ...base, area_type: 'country', target_area: 'United States' });
+check('area: local med spa going national gets a warning', p.notes.some((n: string) => /whole state or country/.test(n)), p.notes);
+p = await plan({ business_name: 'Kelly Roofing', product: 'roof replacement', business_type: 'local', area_type: 'region', target_area: 'Texas' });
+check('area: roofer statewide gets a warning', p.notes.some((n: string) => /whole state or country/.test(n)), p.notes);
+p = await plan({ business_name: 'Peak Home Loans', product: 'home loans and mortgages', area_type: 'region', target_area: 'Tennessee' });
+check('area: special + region -> declare, no 15-mile line', p.special && p.notes.some((n: string) => /special ad category/.test(n)) && !p.notes.some((n: string) => /15 miles/.test(n)), p.notes);
+r = await call({ task: 'launch', campaign: { business_name: 'Peak Home Loans', product: 'mortgages', location: 'Knoxville', area_type: 'region', target_area: 'Tennessee' }, ads: [] });
+check('launch: region in ad set name + audience, no 15-mile line', /Ad set: "Peak Home Loans - Tennessee - Broad"/.test(r.data.text) && /people in All of Tennessee/.test(r.data.text) && !/15 miles/.test(r.data.text), r.data.text?.slice(0, 900));
+r = await call({ task: 'launch', campaign: base, ads: [] });
+check('launch: radius ad set keeps city name', /Ad set: "Glow Med Spa - Austin, TX - Broad"/.test(r.data.text) && /Austin, TX \+ 10 miles/.test(r.data.text), r.data.text?.slice(0, 900));
+mock(ME, () => ({ concepts: [], suggested_offer: '' }));
+await call({ task: 'ads', campaign: { business_name: 'Shop Co', business_type: 'ecommerce', product: 'candles', location: 'Austin, TX', area_type: 'country', target_area: 'United States' } });
+check('ads prompt: national says not one city', /people across United States\. Don't write the ads as if everyone is near one city/.test(lastPrompt()), lastPrompt().slice(0, 300));
+await call({ task: 'ads', campaign: base });
+check('ads prompt: radius says near the city', /Ads shown to: people near Austin, TX/.test(lastPrompt()), null);
+mock(ME, () => ({}));
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
 Deno.exit(fails.length ? 1 : 0);

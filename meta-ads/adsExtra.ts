@@ -71,7 +71,9 @@ function readCampaign(c: any) {
     offer_help: c?.offer_help === true,
     goal: GOALS.includes(str(c?.goal)) ? str(c?.goal) : '',
     daily_budget: Math.max(1, Math.min(10000, Math.round(Number(raw(c?.daily_budget).replace(/[^0-9.]/g, '')) || 20))),
-    radius_miles: Math.max(1, Math.min(100, Math.round(Number(raw(c?.radius_miles).replace(/[^0-9.]/g, '')) || 10))),
+    radius_miles: Math.max(1, Math.min(50, Math.round(Number(raw(c?.radius_miles).replace(/[^0-9.]/g, '')) || 10))),
+    area_type: ['region', 'country'].includes(str(c?.area_type)) ? str(c?.area_type) : 'radius',
+    target_area: s(c?.target_area, 120),
     target_customer: s(c?.target_customer, 200),
     differentiators: noBoasts(s(c?.differentiators, 600)),
     proof_text: noBoasts(s(c?.proof_text, 600)),
@@ -100,12 +102,17 @@ function makePlan(c: Campaign) {
   const destination = purchases ? 'website' : c.funnel_type === 'landing_page' ? 'landing_page' : 'instant_form';
   const special = SPECIAL.test(text);
   const radius = special ? Math.max(15, c.radius_miles) : c.radius_miles;
+  const wide = c.area_type !== 'radius';
+  const area_label = c.area_type === 'country' ? `All of ${c.target_area || '[country]'}`
+    : c.area_type === 'region' ? `All of ${c.target_area || '[state or region]'}`
+    : `${c.location || '[city]'} + ${radius} miles`;
   const notes: string[] = [];
   if (purchases) notes.push('Sales campaigns need the Meta pixel on their website tracking purchases. Check this before launching.');
   if (destination === 'landing_page') notes.push('A landing page needs the Meta pixel sending a Lead event when the form is sent. If that is not set up, use an Instant Form instead.');
   if (health && destination !== 'website') notes.push('Meta limits how health and wellness businesses can track website actions. Instant Forms avoid most of these limits.');
   if (walkIn && !c.offer_text && destination === 'instant_form') notes.push("Lead ads need a reason to leave a name and number. For a cafe, restaurant or shop, add an offer people can claim (like a free item with their first order), or don't run this campaign.");
-  if (special) notes.push('This may fall under a Meta special ad category (credit, housing or jobs). Meta will ask you to declare it, and the area must be at least 15 miles.');
+  if (special) notes.push(wide ? 'This may fall under a Meta special ad category (credit, housing or jobs). Meta will ask you to declare it.' : 'This may fall under a Meta special ad category (credit, housing or jobs). Meta will ask you to declare it, and the area must be at least 15 miles.');
+  if (wide && c.business_type !== 'ecommerce' && (walkIn || health || ['local', 'health_beauty'].includes(c.business_type))) notes.push("A whole state or country is for businesses that serve or ship everywhere. If customers have to come to them or they travel to customers, use miles around the city so the budget isn't spent on people who can't buy.");
   const budget = c.daily_budget;
   const budget_note = budget < 10
     ? 'Under $10 a day, Meta has very little data to learn from. Results will be slow and noisy.'
@@ -140,7 +147,9 @@ function makePlan(c: Campaign) {
     destination,
     destination_label: destination === 'instant_form' ? 'Instant Form' : destination === 'landing_page' ? 'Landing page' : 'Website',
     structure: '1 campaign, 1 ad set, Advantage campaign budget, Advantage+ placements',
-    audience: `Broad: people in ${c.location || '[city]'} + ${radius} miles, no interests or lookalikes`,
+    audience: `Broad: people in ${area_label}, no interests or lookalikes`,
+    area_type: c.area_type,
+    area_label,
     radius_miles: radius,
     daily_budget: budget,
     ads_to_run: budget < 25 ? 2 : 3,
@@ -176,6 +185,7 @@ function campaignBlock(c: Campaign, plan: Plan, forAds = false) {
     `Business: ${or(c.business_name)}`,
     `Type: ${or(c.business_type)}`,
     `Location: ${or(c.location)}`,
+    c.area_type === 'radius' ? `Ads shown to: people near ${or(c.location)}` : `Ads shown to: people across ${c.target_area || 'a wide area'}. Don't write the ads as if everyone is near one city.`,
     `Website: ${or(c.website)}`,
     `What they do: ${or(c.business_description)}`,
     `Promoting: ${or(c.product)}`,
