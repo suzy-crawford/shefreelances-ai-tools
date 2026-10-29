@@ -24,6 +24,22 @@ function makeDeadline(totalMs: number) {
 }
 
 const AI_TIMEOUT = 75_000;
+const WRITER = 'claude-sonnet-5';
+const NICHE_LIB: [string, RegExp, string, string[][]][] = [
+  ["med_spa", /(med ?spa|aesthetic|botox|filler|injectable|laser|facial|skin ?care|derma|lash|brow|body sculpt|hydrafacial)/i, "Some cosmetic procedure ads have extra platform restrictions. Use consented imagery, avoid personal-attribute assumptions, and never imply guaranteed medical results.", [["Transformation", "A look at our real client results.", ""], ["First-Time Offer", "Your first facial, $49 (regularly $120).", ""], ["The Process Video", "Come behind the scenes of a HydraFacial appointment.", ""], ["The Myth Buster", "Botox doesn't freeze your face.", "Claims must be qualified, medically accurate and appropriate to the actual procedure."], ["Social Proof", "I've been coming here for 2 years and my skin has never looked better.", ""], ["Event / Season", "Get wedding-ready with our bridal glow package.", ""]]],
+  ["dental", /(dent|orthodont|invisalign|implant|teeth|smile|veneer)/i, "Avoid assumptions about someone's health or appearance. Testimonials, imagery, financing language and treatment claims must meet healthcare advertising and privacy rules.", [["Smile Transformation", "See the smile transformations happening at [Practice Name].", ""], ["The Consultation Offer", "Considering dental implants? Book a consultation to explore your options.", ""], ["Treatment Myth Buster", "How long does Invisalign actually take?", ""], ["Patient Experience", "Here's what patients say about their experience at [Practice Name].", ""], ["Meet Your Dentist", "Meet Dr. [Name] and the team behind [Practice Name].", ""], ["The Financing Explainer", "Exploring dental implants? Learn about our payment options.", "Never invent financing terms."]]],
+  ["chiro", /(chiro|spinal|posture|physio|physical therapy)/i, "No cure claims or unsupported medical promises, and never assume the viewer has a medical condition.", [["New Patient Special", "New to [Clinic Name]? Ask about our introductory consultation.", ""], ["The Educational Explainer", "What actually happens during your first chiropractic appointment?", ""], ["The Adjustment Process", "Ever wondered what happens during a chiropractic visit?", ""], ["Patient Testimonial", "A closer look at the patient experience at [Clinic Name].", ""], ["The Desk Worker Angle", "Three simple ways to make your desk setup more comfortable.", ""], ["Meet Your Chiropractor", "I'm Dr. [Name]. Here's what to expect when you visit our clinic.", ""]]],
+  ["fitness", /(gym|fitness|yoga|pilates|crossfit|boxing|personal train|barre|spin class|cycle studio|bootcamp)/i, "Member results must be genuine, in context, and never presented as typical or guaranteed.", [["Free Trial Class", "First class free. No commitment. Just show up.", ""], ["Transformation Story", "Meet the members making progress at [Gym].", ""], ["Community Vibe", "This is what a morning at [Studio] looks like.", ""], ["The No-Gym Person", "Hate the gym? Us too. That's why we built something different.", ""], ["New Year / Season", "January special: $0 enrollment and your first month 50% off.", ""], ["Coach / Trainer Intro", "I'm [Name], and here's what we do differently at our studio.", ""]]],
+  ["restaurant", /(restaurant|cafe|coffee|pizza|\bbar\b|grill|bakery|kitchen|taco|sushi|brunch|food|diner|bistro)/i, "", [["The Hero Shot", "This is what everyone's ordering at [Restaurant Name].", ""], ["The Deal", "2 large pizzas for $24.99 this week only.", ""], ["The Review", "Don't take our word for it. Here's what our customers are saying.", ""], ["Behind the Kitchen", "Come behind the scenes while we make our best-selling pizza.", ""], ["The Did You Know", "Did you know there's a pizza shop 5 minutes from you that hand-makes every pie?", ""], ["The Event / Season", "Game day plans? We've got your food covered.", ""]]],
+  ["real_estate", /(real ?estate|realtor|brokerage|homes? for sale|listing|property management)/i, "Housing ads must use Meta's Housing Special Ad Category, which limits location, age and targeting options. Use verified local market numbers only.", [["Just Listed", "Just listed in [City]. See it before it's gone.", ""], ["Home Valuation", "What's your home worth right now? Get a free valuation.", ""], ["Market Update", "What's actually happening with home prices in [City]?", "Use verified local market statistics only."], ["Video Walkthrough", "Come take a quick tour of this home in [City].", ""], ["First-Time Buyer", "Think you can't afford a home? Homes in [City] start at $X.", ""], ["Sold Testimonial", "Sold in 5 days, $15K over asking.", ""]]],
+  ["roofing", /(roof|storm damage|shingle|gutter|siding)/i, "Only mention storms that really hit the area. Insurance messages must be conditional: never promise free replacements or waived deductibles. Only advertise warranty terms the contractor can back up.", [["Storm Damage", "Recent storms hit [City]. Hidden roof damage is common.", ""], ["Insurance Replacement", "Your insurance may cover a new roof. We handle the claim paperwork.", ""], ["Free Drone Inspection", "We spot what you can't see from the ground.", ""], ["Before / After", "One roof replacement. A completely different-looking home.", ""], ["Lifetime Warranty", "Roofs built to last, with a lifetime warranty included.", ""], ["Local Crew", "Licensed, bonded and insured. A local crew in [City].", ""]]],
+  ["home_services", /(plumb|hvac|heating|cooling|\bac\b|clean|landscap|lawn|paint|pressure wash|electric|remodel|contractor|handyman|garage door|pool|insulation|spray foam|solar|window)/i, "", [["Before / After", "This driveway hadn't been pressure washed in 8 years. Two hours later, it looks brand new.", ""], ["Seasonal Urgency", "Get your AC tuned up before the summer heat arrives.", ""], ["The Review Stack", "See why homeowners across [City] choose our team.", ""], ["The Problem", "Weird noise coming from your AC? It could be a small fix or a big one.", ""], ["The Crew", "Meet the team taking care of homes across [City].", ""], ["Free Estimate", "Free estimate in 24 hours. No hidden fees. Licensed and insured.", ""]]],
+  ["pest", /(pest|termite|mosquito|rodent|exterminat|bug)/i, "", [["Seasonal Pest Alert", "Mosquito season is coming to [City]. Explore our yard treatments.", ""], ["Free Inspection", "Not sure what's happening around your home? Schedule a pest inspection.", ""], ["The Hidden Problem", "Three places termites can go unnoticed around a home.", ""], ["Customer Review Stack", "See why homeowners across [City] choose [Business Name].", ""], ["The Prevention Plan", "Here's what's included in our preventative pest plan.", ""], ["Meet the Technician", "Meet the local team helping [City] homeowners with unwanted pests.", ""]]],
+  ["auto_detailing", /(detail|ceramic coat|paint correction|car wash|auto spa|ppf)/i, "", [["The Satisfying Transformation", "Watch us bring this car back to life.", ""], ["The Protection Angle", "What does ceramic coating actually do for your paint?", ""], ["The Package Offer", "Interior and exterior detail packages starting at $X.", ""], ["The Satisfying Process", "30 seconds of the most satisfying detail you'll see today.", ""], ["Premium Care", "A premium car deserves more than a quick rinse.", ""], ["Mobile Convenience", "Professional car detailing, right in your driveway.", ""]]],
+  ["pet", /(pet|dog|cat|groom|daycare|boarding|kennel|vet)/i, "", [["The Grooming Transformation", "Wait until you see this pup's transformation.", ""], ["First-Time Grooming Offer", "New to [Business Name]? Ask about our first-visit grooming package.", ""], ["The Happy Pet Experience", "A behind-the-scenes look at a day at [Business Name].", ""], ["Meet the Groomer", "Meet [Name], the groomer behind some of our cutest transformations.", ""], ["Mobile Grooming", "Your dog's grooming appointment, right outside your front door.", ""], ["Seasonal Grooming", "Holiday grooming appointments are now open.", ""]]],
+  ["clothing", /(clothing|apparel|boutique|fashion|streetwear|athleisure|jewelry|accessor|online store|ecommerce|shop)/i, "Only real scarcity: never say something sold out unless it did.", [["Hero Product", "This is the piece we're known for.", ""], ["First-Order Discount", "20% off your first order, taken off at checkout.", ""], ["UGC Try-On", "Let's try on three pieces from the new collection.", ""], ["Founder Story", "I started this brand because I couldn't find...", ""], ["Restock / Sold Out", "Back in stock. Our last drop sold out in 48 hours.", ""], ["Drop / Collection", "New summer drop. Friday at 9 AM. Get notified.", ""]]],
+];
+const ANGLE_CATS: string[][] = [["Offer & Incentive", "Give someone a compelling reason to act", "Your first HydraFacial for just $49."], ["Transformation & Results", "Demonstrate the potential outcome", "Two hours completely transformed this driveway."], ["Social Proof", "Show that other people trust the business", "See why homeowners across [City] choose our team."], ["Education & Myth Busting", "Answer questions and remove uncertainty", "What actually happens during your first Botox appointment?"], ["Process & Demonstration", "Show the product or service in action", "Come behind the scenes of a HydraFacial appointment."], ["Authority & Trust", "Establish credibility and expertise", "I'm Dr. [Name], and here's what you can expect at our practice."], ["Problem & Solution", "Connect an existing problem to a solution", "That strange noise coming from your AC might be worth checking."], ["Seasonal & Urgency", "Create timely, legitimate reasons to act", "Get your AC serviced before the summer heat arrives."], ["Convenience & Accessibility", "Make the decision feel easier", "Professional car detailing, right in your driveway."], ["Product & Service Showcase", "Make the offering itself desirable", "This is our best-selling dish, and it's easy to see why."]];
 const TYPES = ['local', 'health_beauty', 'ecommerce', 'coaching', 'professional', 'other'];
 const GOALS = ['leads', 'appointments', 'purchases', 'help'];
 
@@ -174,11 +190,11 @@ function afterClick(plan: Plan, c: Campaign) {
 }
 
 const NO_DASHES = 'No em dashes or en dashes anywhere.';
-const VOICE = 'Write like the business owner explaining to one customer what they genuinely think, in calm, plain, spoken language with contractions, not like a copywriter.';
-const FACTS_RULE = 'Anything about how the business works (for example hours, insurance, sessions, downtime, free estimates, kids, same-day, financing, warranties, response times; this includes any step of a visit or a job) must come from the answers above, or be left out, or be a [placeholder in square brackets]. At most 2 placeholders per ad, in primary text only, and never for reviews, ratings, results or customer counts. Headlines, descriptions and the text on the image never contain [brackets]: if one would need a blank, use a different structure.';
-const PROOF_RULE = 'Verified proof means only the Proof and Credentials answers. Never use these words anywhere, whichever answer they come from: best, most trusted, top-rated, #1, leading, industry-leading, favorite, permanent, painless, pain-free, no downtime, guaranteed, or any promise of how long something lasts. If there is no verified proof, use the Process / what to expect angle instead of Trust. In Process, describe only steps given in the answers, plus the form step itself (they leave their details and the business gets in touch); anything else is a [placeholder] or left out.';
-const URGENCY_RULE = 'Never say limited time, right now, ends soon, spots filling up, last chance or today only unless the offer gives a real end date. If the offer itself says limited time but gives no end date, leave those words out. Keep "up to", "from", "starting at" and every condition on the offer word for word. No fear hooks about storms, damage, decay, disease or getting worse.';
-const VIEWER_RULE = 'Use the target customer only to choose angles. Never describe the viewer: no age, gender, body, health, fears or money. No questions about the viewer anywhere, including headlines and the text on the image. Talk about the service and what happens.';
+const VOICE = 'Write like a real person texting a friend about a place they like, not a copywriter writing a brochure: contractions, short sentences, fragments where natural, specific numbers and details over general claims. Never use: elevate, transform, unlock, seamless, revolutionize, game-changer, journey, tranquil, serene, personalized approach, tailored, state-of-the-art, "we are located", "our team is ready". No "Not X, it\'s Y" contrasts, no lists of three ("X. Y. And Z."), no "Imagine" or "Picture this" openers, no "Tired of X? We have the solution." question-then-answer cadence.';
+const FACTS_RULE = 'Facts about THIS business (prices, hours, staff, how they work, insurance, financing, warranties, how fast they respond, results, reviews, customer counts) must come from the answers above, or be a [placeholder in square brackets] (at most 2 per ad, in primary text only, never for reviews, ratings, results or customer counts), or be left out. General facts that are true of the service everywhere are fine and make the copy real (for example "wrinkle relaxers take about 2 weeks to settle", "most roof inspections take under an hour"), said as general facts, never as this business\'s promise. Never invent stories, quotes or claims about their customers ("our patients tell us", "every week someone walks in", "the #1 thing we hear"). A clearly hypothetical "Say you..." scenario is fine. Headlines, descriptions and the text on the image never contain [brackets].';
+const PROOF_RULE = 'Verified proof means only the Proof and Credentials answers. Never use these anywhere: best, most trusted, top-rated, #1, number one, leading, guaranteed, permanent, painless, pain-free, no downtime, or a promise of how long a result lasts. If there is no verified proof, don\'t write a trust or social proof ad.';
+const URGENCY_RULE = 'No fake urgency: never limited time, ends soon, spots filling up, last chance or today only unless the offer gives a real end date. Real calendar timing is fine ("holiday photos are about 6 weeks out", "before summer"). Keep "up to", "from", "starting at" and every condition on the offer word for word. No scare tactics or worst-case scenarios.';
+const VIEWER_RULE = 'Meta rejects ads that state or imply the viewer\'s personal traits. Never say or ask what the viewer is, has or feels about their body, health, weight, age, money, relationships or fears ("Are you overweight?", "You look tired", "Nervous about the dentist?", "women in their 40s"). Talk about situations, moments and the service instead ("Holiday photos coming up?", "Roof leaking again?", "Lunch-break appointment"). Use the target customer only to choose what matters, never to describe them.';
 
 function campaignBlock(c: Campaign, plan: Plan, forAds = false) {
   return [
@@ -212,18 +228,12 @@ function emojiRule(c: Campaign) {
   return c.no_emojis ? 'No emojis anywhere.' : 'At most 1 or 2 emojis in the primary text, none in headlines.';
 }
 
-function imageRules(plan: Plan, c: Campaign, video = false) {
-  const parts = [
-    video
-      ? 'This is the first frame of a vertical video: no text, logos or buttons on it. Photorealistic.'
-      : 'If I uploaded a logo or website screenshot, use it for the brand style. Keep text readable on mobile. Create this as one finished 4:5 ad image, ready to upload to Meta, with all the text spelled exactly as written. No button shapes.',
-    'Do not invent ratings, results, prices, urgency, guarantees, badges, award ribbons or credentials.',
-    c.assets_text
-      ? 'If you use my real photos, keep the people in them exactly as they are. Never add, change or generate a person.'
-      : 'Show no people, faces or bodies: show the room, the equipment, the product, the food, the finished work or hands at work. Replace with a real photo of the business if you have one.',
-  ];
-  if (plan.health) parts.push('No before and after images, no bodies, scales or close-ups of skin, teeth or problem areas, and no one presented as a real client or patient.');
-  return parts.join(' ');
+function nicheHints(c: Campaign) {
+  const text = [c.business_name, c.business_description, c.product, c.services.join(' ')].join(' ');
+  const n = NICHE_LIB.find((x) => x[1].test(text)) || (c.business_type === 'ecommerce' ? NICHE_LIB.find((x) => x[0] === 'clothing') : undefined);
+  const cats = ANGLE_CATS.map((a) => `- ${a[0]} (${a[1]}), e.g. "${a[2]}"`).join('\n');
+  if (!n) return `ANGLE CATEGORIES (pick from these):\n${cats}`;
+  return `ANGLES THAT WORK FOR THIS KIND OF BUSINESS (example lines show the style, never copy their facts):\n${n[3].map((a) => `- ${a[0]}: "${a[1]}"${a[2] ? ` (Caution: ${a[2]})` : ''}`).join('\n')}${n[2] ? `\nNiche caution: ${n[2]}` : ''}\n\nOTHER ANGLE CATEGORIES:\n${cats}`;
 }
 
 const keepParas = (v: unknown, max: number) => fixDashes(raw(v)).replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
@@ -323,19 +333,29 @@ Return JSON: text.`;
 }
 
 function moreVersionsText(c: Campaign, plan: Plan, ad: unknown) {
-  return `Create 6 new versions of this ad while keeping the same offer and core strategic angle.
+  return `You are a world-class direct response copywriter. Write 6 more Meta ads (Facebook and Instagram) for this business. This ad is already running, so each new one must use a completely different reason to buy (a specific moment or situation, not a category):
 
 ${adText(ad)}
 
-The business: ${or(c.business_name)}, ${or(c.location)}. Offer: ${or(c.offer_text)}. Verified proof: ${or(c.proof_text)}. Credentials: ${or(c.credentials_text)}. Facts from their website: ${or(c.site_details.join('; '))}.
+${campaignBlock(c, plan)}
+
+WHERE THE CLICK GOES: ${afterClick(plan, c)}
+
+${nicheHints(c)}
+
+Use these frameworks, 2 ads each: Problem Agitate Solve, Before After Bridge, and a short "Say you..." scenario. Mix lengths: 2 short (under 50 words), 3 medium (50 to 100), 1 long (100 to 150). ${c.offer_text ? `Every ad names the offer (${c.offer_text}) with its conditions.` : ''} Every ad ends with a clear call to action that matches where the click goes. Give each ad a headline under 40 characters, a description under 30, text for the image (8 words or fewer) and one concrete photo idea.
+
+${VOICE}
+${VIEWER_RULE}
 ${FACTS_RULE}
-
-Change only one major variable at a time: 2 new headline treatments, 2 new visual layouts, 1 different CTA treatment, 1 alternative proof or trust treatment (only if verified proof is available; if not, make a third headline treatment instead). Keep the audience, offer, positioning, and campaign goal consistent. Do not invent new proof, pricing, guarantees, urgency, testimonials, ratings, or results. Headlines under 40 characters, descriptions under 30, text on image 8 words or fewer. Keep every [placeholder]. No before and after layouts. ${NO_DASHES} For each version, explain exactly what changed.
-
-For every new visual layout: ${imageRules(plan, c)}
+${PROOF_RULE}
+${URGENCY_RULE}
+${emojiRule(c)} ${NO_DASHES}
 
 Ad rules:
-${plan.rules.map((r) => '- ' + r).join('\n')}`;
+${plan.rules.map((r) => '- ' + r).join('\n')}
+
+Label each ad with: [Framework] [Reason] [Length] [Word count].`;
 }
 
 function pageBuildText(c: Campaign, plan: Plan, ad: unknown, page: unknown) {
@@ -415,8 +435,16 @@ const arr = (v: unknown, n: number, max: number) =>
   (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\n+/) : []).map((x) => clean(x, max).replace(/^\s*(?:[-*\u2022]\s+|\d{1,2}[.)]\s+)/, '')).filter(Boolean).slice(0, n);
 const words = (v: string) => v.split(/\s+/).filter(Boolean).length;
 
-async function ask(base44: any, prompt: string, schema: unknown, ms: number) {
-  const raw = await withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM({ prompt, response_json_schema: schema }), ms, 'The AI took too long. Try again.');
+async function ask(base44: any, prompt: string, schema: unknown, ms: number, model = '') {
+  const call = (m: string) => withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM(m ? { prompt, response_json_schema: schema, model: m } : { prompt, response_json_schema: schema }), m ? ms : Math.min(ms, 45_000), 'The AI took too long. Try again.');
+  const start = Date.now();
+  let raw;
+  try {
+    raw = await call(model);
+  } catch (e) {
+    if (!model || Date.now() - start > ms - 30_000) throw e;
+    raw = await call('');
+  }
   if (typeof raw !== 'string') return raw || {};
   try {
     return JSON.parse(raw);
@@ -442,14 +470,14 @@ export default async function (req: Request) {
       const field = str(body?.field);
       if (!text) return Response.json({ error: 'Nothing to rewrite.' }, { status: 400 });
       if (field === 'image_prompt' || field === 'motion_prompt') return Response.json({ error: 'Edit this one by hand.' }, { status: 400 });
-      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(AI_TIMEOUT));
+      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(AI_TIMEOUT), WRITER);
       let out = field.startsWith('primary') ? paragraphs(raw(d.text)) : field.startsWith('video_') ? clean(d.text, 1200) : clean(d.text, 400);
       if (c.no_emojis) out = noEmoji(out);
       return Response.json({ text: out });
     }
 
     if (task === 'form') {
-      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(AI_TIMEOUT));
+      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(AI_TIMEOUT), WRITER);
       return Response.json({
         instant_form: {
           form_headline: clean(d.form_headline, 80), intro: clean(d.intro, 600),
@@ -466,7 +494,7 @@ export default async function (req: Request) {
     }
 
     if (task === 'page') {
-      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(AI_TIMEOUT));
+      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(AI_TIMEOUT), WRITER);
       const landing_page = {
         page_type: clean(d.page_type, 60), headline: clean(d.headline, 160), subheadline: clean(d.subheadline, 300), cta: clean(d.cta, 60), offer: clean(d.offer, 600),
         benefits: arr(d.benefits, 3, 300), proof: arr(d.proof, 6, 300), process: arr(d.process, 4, 300),

@@ -159,7 +159,7 @@ check('page: build prompt has the copy and the Pixel Lead event', /Headline: Fre
 // ---- more versions / launch (code only, no AI) ----
 mock(ME, () => { throw new Error('should not call AI'); });
 r = await call({ task: 'more', campaign: base, ad: concept(1) });
-check('more: text with rules, no AI call', r.status === 200 && /Create 6 new versions/.test(r.data.text) && /Ad rules:/.test(r.data.text) && g.__mock.calls.length === 0, r);
+check('more: text with rules, no AI call', r.status === 200 && /Write 6 more Meta ads/.test(r.data.text) && /completely different reason/.test(r.data.text) && /Ad rules:/.test(r.data.text) && g.__mock.calls.length === 0, r);
 r = await call({ task: 'launch', campaign: base, ads: [{ name: 'First Visit', primary: 'Hi', headline: 'H', description: 'D', cta: 'Sign Up', format: 'static' }], funnel: {} });
 check('launch: Instant Form fallback when no form written', /An Instant Form with name, phone and email/.test(r.data.text), r.data.text?.slice(0, 200));
 check('launch: campaign name and ad name', /"Glow Med Spa - appointments - [A-Z][a-z]{2} \d{4}"/.test(r.data.text) && /Ad "Glow Med Spa - First Visit - Image"/.test(r.data.text), null);
@@ -339,6 +339,31 @@ check('ads prompt: national says not one city', /people across United States\. D
 await call({ task: 'ads', campaign: base });
 check('ads prompt: radius says near the city', /Ads shown to: people near Austin, TX/.test(lastPrompt()), null);
 mock(ME, () => ({}));
+
+// ---- copy writer: Claude, niche library, fallback ----
+mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: { ...base, offer_text: '20% off any treatment for new patients' } });
+check('writer: ads asks for claude-sonnet-5', g.__mock.calls[0]?.model === 'claude-sonnet-5', g.__mock.calls[0]?.model);
+check('writer: med spa gets Suzy niche angles', /ANGLES THAT WORK FOR THIS KIND OF BUSINESS/.test(lastPrompt()) && /Botox doesn't freeze your face/.test(lastPrompt()), null);
+check('writer: offer required in every ad', /Every ad names the offer \(20% off any treatment for new patients\)/.test(lastPrompt()), null);
+check('writer: old brochure voice gone', !/not like a copywriter/.test(lastPrompt()) && !/no clever or hype/.test(lastPrompt()) && /texting a friend/.test(lastPrompt()), null);
+check('writer: no invented customer stories rule', /Never invent stories, quotes or claims about their customers/.test(lastPrompt()), null);
+mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
+await call({ task: 'ads', campaign: { business_name: 'Acme Widgets', product: 'custom widgets', goal: 'leads' } });
+check('writer: unknown niche gets angle categories', /ANGLE CATEGORIES \(pick from these\)/.test(lastPrompt()) && !/ANGLES THAT WORK/.test(lastPrompt()), null);
+check('writer: no offer -> sell the service', /There is no offer: sell the service/.test(lastPrompt()), null);
+mock(ME, (a: any, n: number) => { if (a.model) throw new Error('model unavailable'); return { concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }; });
+r = await call({ task: 'ads', campaign: base });
+check('writer: falls back to default model when Claude fails', r.status === 200 && g.__mock.calls.length === 2 && !g.__mock.calls[1].model, g.__mock.calls.map((x: any) => x.model));
+mock(ME, () => { throw new Error('boom'); });
+r = await call({ task: 'ads', campaign: base });
+check('writer: both fail -> plain error, only 2 tries', r.status === 500 && g.__mock.calls.length === 2, r);
+mock(ME, () => ({ text: 'Shorter one' }));
+await call({ task: 'rewrite', campaign: base, ad: concept(1), field: 'headline_1', text: 'Long headline', style: 'shorter' });
+check('writer: rewrite uses Claude too', g.__mock.calls[0]?.model === 'claude-sonnet-5', g.__mock.calls[0]);
+mock(ME, () => ({ fields: {}, services: [], offers: [], details: [] }));
+await call({ task: 'fill', site_text: 'Glow Med Spa in Austin offers facials. '.repeat(20) });
+check('writer: website fill stays on the cheap default model', g.__mock.calls[0] && !g.__mock.calls[0].model, g.__mock.calls[0]?.model);
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
