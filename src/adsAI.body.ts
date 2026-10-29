@@ -1,0 +1,695 @@
+// ---- adsAI ----
+
+const AI_TIMEOUT = 75_000;
+const TYPES = ['local', 'health_beauty', 'ecommerce', 'coaching', 'professional', 'other'];
+const GOALS = ['leads', 'appointments', 'purchases', 'help'];
+
+// Health and beauty businesses get Meta's stricter ad rules.
+const HEALTH = /(med ?spa|aesthetic (clinic|medicine|center|studio|nurse|treatments?)|iv (hydration|infusion)|vitamin (injections?|shots?)|\bb12\b|neurotoxin|chemical peel|lip (filler|enhancement)|\baesthetics\b|medical aesthetic|aesthetician|esthetician|botox|\btox\b|dysport|filler|injectabl|injector|laser (hair|skin|treat|resurfac|facial|lipo)|dental|dentist|orthodont|invisalign|\bteeth\b|medical clinic|health clinic|wellness clinic|chiropract|physical therap|massage therap|wellness (center|clinic|spa)|medical wellness|weight loss|semaglutide|ozempic|wegovy|tirzepatide|mounjaro|\bglp|peptide|iv drip|iv therapy|hormone|testosterone|\btrt\b|dermatolog|skin ?care|facials?\b|hydrafacial|microneedl|body sculpt|coolsculpt|hair loss|hair restoration|medical spa|physician|\bnurses?\b|plastic surg|cosmetic surg|acupunct|\bmassage\b)/i;
+const RX_DRUGS = /(semaglutide|ozempic|wegovy|tirzepatide|mounjaro|zepbound|\bglp-?1|botox|dysport|xeomin|jeuveau|daxxify|juvederm|restylane|sculptra|radiesse|kybella|testosterone|\btrt\b|phentermine)/i;
+const WEIGHT_LOSS = /(weight ?loss|lose weight|semaglutide|ozempic|wegovy|tirzepatide|mounjaro|zepbound|\bglp|phentermine|fat loss|slim)/i;
+// Meta "special ad categories": credit, housing, employment. They need a wider area and limit targeting.
+const SPECIAL = /\b(loans?|mortgages?|credit (cards?|repair|scores?|union)|lending|lenders?|realtors?|realty|(homes?|(?<!bounce )houses?|condos?) for (sale|rent)|apartments? for rent|rental listings?|real estate (agents?|agency|listings?|brokerage|team|group|services|company)|buy(ing)? and sell(ing)? homes|property management|financial advis\w*|insurance agen\w*|auto financ\w*|now hiring|we're hiring|job openings?|careers)\b/i;
+// Businesses people walk into (no appointment or quote): a lead form needs an offer to claim.
+// Shops people book or bring work to, not walk-in retail.
+const SERVICE_SHOP = /\b(auto|body shop|repair|barber\w*|tattoo|print shop|machine shop|workshop|detailing|tailor)\b/i;
+const WALK_IN = /\b(cafe|caf\u00e9|coffee|espresso|eatery|restaurant|bakery|bagels?|pizzeria|pizza|diner|bistro|brewery|pub|taproom|taqueria|tacos?|bbq|barbecue|burgers?|grill|food truck|ice cream|donuts?|deli|tea (house|shop)|boba|juice|smoothies?|(wine|juice|coffee|sports|cocktail) bar|bar (&|and) grill|boutique|florist|bookstore|gift shop|thrift|(shop|store|market))\b/i;
+
+// Raw text (dashes untouched, so clean() can turn them into commas or "to").
+const raw = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v) : '');
+// Short number ranges become "to" ("9-5", "$50-$100", "9am-5pm"); phone numbers, dates and codes stay as they are.
+const fixDashes = (v: string) => {
+  // Keep phone numbers ("555-0199", "(512) 555-0199") and "24-7" exactly as written.
+  const kept: string[] = [];
+  const hold = (m: string) => `\u0000${kept.push(m) - 1}\u0000`;
+  const out = v
+    .replace(/\(?\b\d{3}\)?[\s.-]?\d{3}[-.]\d{4}\b|\b\d{3}[-.]\d{4}\b|\b24\s*[-\u2013/]\s*7\b/g, hold)
+    .replace(/(?<![\d\-\u2013\u2014])(\$?\d{1,4}(?:[ap]\.?m\.?)?)\s*[\u2013\u2014-]\s*(\$?\d{1,4}(?:[ap]\.?m\.?)?)(?![\d\-\u2013\u2014])/gi, '$1 to $2')
+    .replace(/(\p{L})\s*\u2013\s*(\p{L})/gu, '$1 to $2')
+    .replace(/\s*[\u2013\u2014]\s*/g, ', ')
+    .replace(/([^\s\d]) - ([^\s\d])/g, '$1, $2');
+  return out.replace(/\u0000(\d+)\u0000/g, (_m, i) => kept[Number(i)]);
+};
+// Names stay as typed (only the dashes the brand doesn't use become hyphens).
+const name = (v: unknown, max = 120) => raw(v).replace(/[\u2013\u2014]/g, '-').replace(/\s+/g, ' ').trim().slice(0, max);
+const url = (v: unknown, max = 300) => raw(v).trim().slice(0, max);
+// Questions Meta doesn't allow in lead forms (health, money, age), matched as whole words.
+const SENSITIVE = /\b(health|medical (condition|history)|health condition|symptoms?|medications?|diagnos\w*|pregnan\w*|insurance|insured|income|salary|credit score|your age|how old are you|date of birth|birthday|religio\w*|ethnic\w*|sexual\w*|criminal|disabilit\w*)\b/i;
+// For health businesses also: questions about symptoms, the body or problem areas.
+const HEALTH_Q = /\b(pain|hurt\w*|weight|pounds|skin concerns?|concerns?|conditions?|wrinkles?|acne|scars?|bleeding|gums|cavit\w*|treat(ed|ments?) before|problem areas?|bod(y|ies)|fat)\b/i;
+const s = (v: unknown, max = 600) => fixDashes(raw(v)).replace(/\s+/g, ' ').trim().slice(0, max);
+// Boasts aren't proof or a difference: drop any sentence with them.
+const BOASTS = /(\bbest\b|most trusted|top[- ]rated|#1\b|number one|\bleading\b|industry[- ]leading|\bfavou?rite\b|\bpermanent|painless|pain[- ]free|no downtime|guarantee|lasts? (a lifetime|forever|\d+ years)|double the life)/i;
+const noBoasts = (v: string) => v.split(/(?<=[.!?;])\s+/).filter((x) => !BOASTS.test(x)).join(' ').trim();
+const list = (v: unknown, max = 8) => (Array.isArray(v) ? v : raw(v).split(/\n|;|,(?=\s)/)).map((x) => s(x, 200)).filter(Boolean).slice(0, max);
+const NP = 'Not provided';
+const or = (v: string) => v || NP;
+
+// Every campaign answer, cleaned. Unknown fields are ignored.
+// deno-lint-ignore no-explicit-any
+function readCampaign(c: any) {
+  return {
+    business_name: name(c?.business_name, 120),
+    website: url(c?.website, 200),
+    location: s(c?.location, 120),
+    business_type: TYPES.includes(str(c?.business_type)) ? str(c?.business_type) : '',
+    business_description: s(c?.business_description, 600),
+    product: s(c?.product, 200),
+    services: list(c?.services),
+    offer_text: s(c?.offer_text, 300),
+    offer_help: c?.offer_help === true,
+    goal: GOALS.includes(str(c?.goal)) ? str(c?.goal) : '',
+    daily_budget: Math.max(1, Math.min(10000, Math.round(Number(raw(c?.daily_budget).replace(/[^0-9.]/g, '')) || 20))),
+    radius_miles: Math.max(1, Math.min(100, Math.round(Number(raw(c?.radius_miles).replace(/[^0-9.]/g, '')) || 10))),
+    target_customer: s(c?.target_customer, 200),
+    differentiators: noBoasts(s(c?.differentiators, 600)),
+    proof_text: noBoasts(s(c?.proof_text, 600)),
+    credentials_text: s(c?.credentials_text, 400),
+    brand_colors: Array.isArray(c?.brand_colors) ? c.brand_colors.map((x: unknown) => s(x, 20)).join(', ') : s(c?.brand_colors, 120),
+    brand_style: s(c?.brand_style, 200),
+    assets_text: s(c?.assets_text, 400),
+    site_details: list(c?.site_details, 6).map((x) => s(x, 200)),
+    no_emojis: c?.no_emojis === true,
+    funnel_type: ['instant_form', 'landing_page'].includes(str(c?.funnel_type)) ? str(c?.funnel_type) : '',
+    cta_url: url(c?.cta_url, 300),
+  };
+}
+type Campaign = ReturnType<typeof readCampaign>;
+
+function today() {
+  return new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
+}
+
+// ---------- The campaign plan, decided in code (never by the AI) ----------
+function makePlan(c: Campaign) {
+  const text = [c.business_name, c.business_type, c.business_description, c.product, c.services.join(' '), c.offer_text].join(' ');
+  const health = c.business_type === 'health_beauty' || HEALTH.test(text) || RX_DRUGS.test(text);
+  const walkIn = !['health_beauty', 'professional', 'coaching'].includes(c.business_type) && !health && WALK_IN.test(text) && !SERVICE_SHOP.test(text);
+  const goal = c.goal === 'help' || !c.goal ? (c.business_type === 'ecommerce' ? 'purchases' : health ? 'appointments' : 'leads') : c.goal;
+  const purchases = goal === 'purchases';
+  // Where the click goes: an Instant Form unless they sell online. A landing page only if she picked one.
+  const destination = purchases ? 'website' : c.funnel_type === 'landing_page' ? 'landing_page' : 'instant_form';
+  const special = SPECIAL.test(text);
+  const radius = special ? Math.max(15, c.radius_miles) : c.radius_miles;
+  const notes: string[] = [];
+  if (purchases) notes.push('Sales campaigns need the Meta pixel on their website tracking purchases. Check this before launching.');
+  if (destination === 'landing_page') notes.push('A landing page needs the Meta pixel sending a Lead event when the form is sent. If that is not set up, use an Instant Form instead.');
+  if (health && destination !== 'website') notes.push('Meta limits how health and wellness businesses can track website actions. Instant Forms avoid most of these limits.');
+  if (walkIn && !c.offer_text && destination === 'instant_form') notes.push("Lead ads need a reason to leave a name and number. For a cafe, restaurant or shop, add an offer people can claim (like a free item with their first order), or don't run this campaign.");
+  if (special) notes.push('This may fall under a Meta special ad category (credit, housing or jobs). Meta will ask you to declare it, and the area must be at least 15 miles.');
+  const budget = c.daily_budget;
+  const budget_note = budget < 10
+    ? 'Under $10 a day, Meta has very little data to learn from. Results will be slow and noisy.'
+    : budget < 25
+    ? 'This is a small test budget. Keep it in one ad set so Meta learns faster.'
+    : 'One campaign, one ad set, a few ads competing inside it.';
+  const rules = [
+    'No fake reviews, results, testimonials, credentials or scarcity.',
+    'No guarantees ("guaranteed results", "lose 20 pounds").',
+    'Never describe the viewer: no age, gender, body, health, money or fears ("Are you overweight?", "Nervous about the dentist?", "women in their 30s"). Meta rejects these.',
+    'The ad and the form or page after the click must say the same thing.',
+  ];
+  if (health) {
+    rules.push(
+      "Don't name prescription drugs or brand-name injectables in the ad or image (Botox, Dysport, Juvederm, semaglutide, Ozempic, tirzepatide). Say \"wrinkle relaxer\", \"filler\" or \"medical weight loss program\". Meta only allows prescription drug ads from certified advertisers.",
+      'Before and after photos: never for weight loss. For cosmetic treatments, only the business\'s own real results with the client\'s written permission.',
+      'No promises about how someone will look ("Look 10 years younger").',
+      'Lead with the offer and the experience, with confident, warm language.',
+      'Only quote reviews about the staff or the experience, never reviews that describe results.',
+      'Use real photos of the space and the team where possible. Never describe a person for an AI to generate.',
+    );
+    if (WEIGHT_LOSS.test(text)) rules.push('For weight loss: no body, scale, tape measure or before and after imagery, and no pounds or sizes.');
+  }
+  if (RX_DRUGS.test(text)) notes.push('They offer prescription treatments. Advertising those needs Meta certification (LegitScript), so advertise the consultation or the experience instead.');
+  return {
+    goal,
+    health,
+    walk_in: walkIn,
+    special,
+    objective: purchases ? 'Sales' : 'Leads',
+    optimization: purchases ? 'Purchases' : 'Leads',
+    destination,
+    destination_label: destination === 'instant_form' ? 'Instant Form' : destination === 'landing_page' ? 'Landing page' : 'Website',
+    structure: '1 campaign, 1 ad set, Advantage campaign budget, Advantage+ placements',
+    audience: `Broad: people in ${c.location || '[city]'} + ${radius} miles, no interests or lookalikes`,
+    radius_miles: radius,
+    daily_budget: budget,
+    ads_to_run: budget < 25 ? 2 : 3,
+    budget_note,
+    notes,
+    rules,
+  };
+}
+type Plan = ReturnType<typeof makePlan>;
+
+function afterClick(plan: Plan, c: Campaign) {
+  if (plan.destination === 'instant_form' && plan.walk_in) {
+    return "An Instant Form inside Facebook or Instagram that asks for their name and phone. People don't book this business, so the form claims the offer: say what they get and how to use it (\"Leave your name and show the text at the counter\"). Never say \"we'll call to find a time\", \"book online\" or \"visit our site\".";
+  }
+  if (plan.destination === 'instant_form') {
+    return "An Instant Form inside Facebook or Instagram that asks for their name, phone and email. The business then contacts them. Match this exactly: say what they leave and what happens next (\"Leave your number and we'll call to find a time\"). Never say \"pick your time\", \"book online\", \"see the menu\" or \"visit our site\".";
+  }
+  if (plan.destination === 'landing_page') {
+    return `A landing page${c.cta_url ? ` (${c.cta_url})` : ''} built for this offer, with a short form. Match it: say what they'll find and what to do there.`;
+  }
+  return `Their website${c.website ? ` (${c.website})` : ''}, where they can buy. Match it: send them to shop or buy, not to fill out a form.`;
+}
+
+const NO_DASHES = 'No em dashes or en dashes anywhere.';
+const VOICE = 'Write like the business owner explaining to one customer what they genuinely think, in calm, plain, spoken language with contractions, not like a copywriter.';
+const FACTS_RULE = 'Anything about how the business works (for example hours, insurance, sessions, downtime, free estimates, kids, same-day, financing, warranties, response times; this includes any step of a visit or a job) must come from the answers above, or be left out, or be a [placeholder in square brackets]. At most 2 placeholders per ad, in primary text only, and never for reviews, ratings, results or customer counts. Headlines, descriptions and the text on the image never contain [brackets]: if one would need a blank, use a different structure.';
+const PROOF_RULE = 'Verified proof means only the Proof and Credentials answers. Never use these words anywhere, whichever answer they come from: best, most trusted, top-rated, #1, leading, industry-leading, favorite, permanent, painless, pain-free, no downtime, guaranteed, or any promise of how long something lasts. If there is no verified proof, use the Process / what to expect angle instead of Trust. In Process, describe only steps given in the answers, plus the form step itself (they leave their details and the business gets in touch); anything else is a [placeholder] or left out.';
+const URGENCY_RULE = 'Never say limited time, right now, ends soon, spots filling up, last chance or today only unless the offer gives a real end date. If the offer itself says limited time but gives no end date, leave those words out. Keep "up to", "from", "starting at" and every condition on the offer word for word. No fear hooks about storms, damage, decay, disease or getting worse.';
+const VIEWER_RULE = 'Use the target customer only to choose angles. Never describe the viewer: no age, gender, body, health, fears or money. No questions about the viewer anywhere, including headlines and the text on the image. Talk about the service and what happens.';
+
+function campaignBlock(c: Campaign, plan: Plan, forAds = false) {
+  return [
+    `Business: ${or(c.business_name)}`,
+    `Type: ${or(c.business_type)}`,
+    `Location: ${or(c.location)}`,
+    `Website: ${or(c.website)}`,
+    `What they do: ${or(c.business_description)}`,
+    `Promoting: ${or(c.product)}`,
+    `Services: ${or(c.services.join(', '))}`,
+    c.offer_text
+      ? `Offer: ${c.offer_text}`
+      : c.offer_help && forAds
+      ? 'Offer: not decided. Suggest one simple offer this business could run, with [blanks] for anything the owner must set, like "New patient exam and cleaning for [price]", and put it in suggested_offer only. Never mention the suggested offer in the ads: write all 3 about the service so they work without it, never state a price, percent, freebie or deadline that is not in these answers, and don\'t use the Direct offer angle.'
+      : `Offer: none yet. Don't invent one; promote the service itself.`,
+    `Goal: ${plan.goal}`,
+    `After the click: ${plan.destination_label}`,
+    `Target customer (only to choose angles, never to describe the viewer): ${or(c.target_customer)}`,
+    `What makes them different: ${or(c.differentiators)}`,
+    `Proof (verified, real only): ${or(c.proof_text)}`,
+    `Credentials: ${or(c.credentials_text)}`,
+    `Facts from their website: ${or(c.site_details.join('; '))}`,
+    `Brand colors: ${or(c.brand_colors)}`,
+    `Brand style: ${or(c.brand_style)}`,
+    `Photos or videos they have: ${or(c.assets_text)}`,
+  ].join('\n');
+}
+
+function emojiRule(c: Campaign) {
+  return c.no_emojis ? 'No emojis anywhere.' : 'At most 1 or 2 emojis in the primary text, none in headlines.';
+}
+
+// Added to every image or video prompt by code.
+function imageRules(plan: Plan, c: Campaign, video = false) {
+  const parts = [
+    video
+      ? 'This is the first frame of a vertical video: no text, logos or buttons on it. Photorealistic.'
+      : 'If I uploaded a logo or website screenshot, use it for the brand style. Keep text readable on mobile. Create this as one finished 4:5 ad image, ready to upload to Meta, with all the text spelled exactly as written. No button shapes.',
+    'Do not invent ratings, results, prices, urgency, guarantees, badges, award ribbons or credentials.',
+    c.assets_text
+      ? 'If you use my real photos, keep the people in them exactly as they are. Never add, change or generate a person.'
+      : 'Show no people, faces or bodies: show the room, the equipment, the product, the food, the finished work or hands at work. Replace with a real photo of the business if you have one.',
+  ];
+  if (plan.health) parts.push('No before and after images, no bodies, scales or close-ups of skin, teeth or problem areas, and no one presented as a real client or patient.');
+  return parts.join(' ');
+}
+
+// ---------- AI prompts ----------
+function adsPrompt(c: Campaign, plan: Plan) {
+  return `You are an expert direct-response advertising strategist, copywriter, and creative strategist. Create 3 strong, distinct Meta ad concepts specific to this business, offer, target customer, goal, market, proof and creative assets. Do not create generic ad copy. Each ad uses a genuinely different reason the customer may care.
+Today is ${today()}.
+
+${campaignBlock(c, plan, true)}
+
+WHERE THE CLICK GOES: ${afterClick(plan, c)}
+
+Use the supplied information first. Use general niche knowledge only to choose angles and formats, never as facts about this business.
+Choose the strongest 3 angle families: Direct offer, Desired outcome, Problem/solution (everyday problems, never exaggerated), Trust/credibility (verified proof only), Process/what to expect, Education, Transformation, Experience/lifestyle, Convenience, Local relevance (only when location matters). The 3 must use different angles, not repeat a hook structure, and never fabricate pain, urgency, scarcity, pricing, testimonials, ratings or results.
+${VIEWER_RULE}
+${FACTS_RULE}
+${PROOF_RULE}
+${URGENCY_RULE}
+
+For each concept: name (simple internal name like First-Time Offer); angle (family name); why (1 to 2 sentences on the motivation); primary_short (about 60 words, 40 to 80) and primary_medium (about 120 words, 100 to 150): lead with something relevant, explain the offer clearly, use the business name where natural, make the action obvious, no filler, no clever or hype copy, no fake quotes. Short paragraphs separated by a blank line, hook first on its own line, call to action last on its own line. ${VOICE}
+headlines: 5, each under 40 characters. Pick 5 structures you can fill with the facts above: direct offer, desired outcome (no promised results), curiosity (no clickbait), problem/solution (everyday, no fear), location (natural), convenience, benefit stack, direct action (match where the click goes). Use freebie only if the offer says free, social proof only with verified proof, urgency only with a real end date.
+descriptions: 3, each under 30 characters. cta: the best Meta button for where the click goes (for an Instant Form it must be Sign Up, Get Quote or Learn More; for a website Shop Now, Learn More or Book Now), cta_why in one sentence. overlay: text on the image, 8 words or fewer. image_prompt: a complete prompt to paste into ChatGPT for the finished 4:5 ad image: business name, offer, overlay text, brand colors and style, scene, layout and typography direction, verified proof only. No people, faces or bodies: show the room, the equipment, the product, the food, the finished work or hands at work. If they listed real photos, say "use my photo of" what it shows instead of describing a person.
+format: "static" or "video", whichever fits the concept and their assets best (static if they listed no videos). creative_direction: one line on the visual. If video: video {format (UGC, talking head, B-roll, process or montage), duration, opening_visual, hook (first 1 to 3 seconds), body, cta, shots (array)}, image_prompt becomes a photorealistic vertical first-frame still, and motion_prompt says what the subject does, camera movement and pacing (no new people, objects, claims or branding). For static, video is null and motion_prompt is empty.
+${emojiRule(c)} ${NO_DASHES}
+
+AD RULES FOR THIS BUSINESS:
+${plan.rules.map((r) => '- ' + r).join('\n')}
+
+Return JSON: concepts (exactly 3) and suggested_offer (the offer you suggested, or empty).`;
+}
+
+const CONCEPT = {
+  type: 'object',
+  properties: {
+    name: { type: 'string' }, angle: { type: 'string' }, why: { type: 'string' },
+    primary_short: { type: 'string' }, primary_medium: { type: 'string' },
+    headlines: { type: 'array', items: { type: 'string' } }, descriptions: { type: 'array', items: { type: 'string' } },
+    cta: { type: 'string' }, cta_why: { type: 'string' }, overlay: { type: 'string' }, image_prompt: { type: 'string' },
+    format: { type: 'string' }, creative_direction: { type: 'string' }, motion_prompt: { type: 'string' },
+    video: {
+      type: ['object', 'null'],
+      properties: { format: { type: 'string' }, duration: { type: 'string' }, opening_visual: { type: 'string' }, hook: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, shots: { type: 'array', items: { type: 'string' } } },
+    },
+  },
+  required: ['name', 'angle', 'why', 'primary_short', 'primary_medium', 'headlines', 'descriptions', 'cta', 'cta_why', 'overlay', 'image_prompt', 'format', 'creative_direction'],
+};
+const ADS_SCHEMA = { type: 'object', properties: { concepts: { type: 'array', items: CONCEPT }, suggested_offer: { type: 'string' } }, required: ['concepts', 'suggested_offer'] };
+
+function fillPrompt(siteText: string) {
+  return `You are helping a beginner freelance marketer plan a Meta ad campaign for a local business. Read the website text below and pull out the facts she needs. Only use what is on the website. Never invent offers, prices, reviews, credentials or services. If the text is a domain-for-sale, coming soon or placeholder page, return every field empty.
+Return:
+business_name; business_type: one of local (restaurants, gyms, home services, shops), health_beauty (med spas, salons, dentists, clinics, wellness), ecommerce (sells products online), coaching, professional (law, accounting, agencies) or other;
+location: city and state, or empty if the site lists more than one location;
+services: up to 6, 1 to 4 words each, in the customer's words;
+offers: up to 3. Only a promotion the site describes in a sentence saying what the customer gets. A menu link, button or page title alone is not an offer. Giveaways, contests, charity programs, memberships and financing are not offers. Copy the wording and conditions exactly; never add "regularly" or a before price.
+goal: appointments if they push booking, purchases if they sell online, leads if they ask people to get in touch, else help;
+description: one sentence; target_customer: who the site says it serves, without guessing age or gender;
+differentiators; proof: only specific, checkable facts copied exactly (years, counts, named awards with the year, licenses, short review quotes with a first name). Leave out "most trusted", "best", "top-rated" and any medical or results claim. If two numbers disagree, leave both out. Never finish a cut-off quote.
+credentials: exactly as written; never add DDS, MD, RN or anything not on the site.
+details: up to 6 concrete facts copied exactly (named items with prices, hours, service area, license number, payment or insurance notes).
+brand_style: a few words. ${NO_DASHES}
+
+WEBSITE TEXT:
+${siteText}`;
+}
+const STR = { type: 'string' };
+const STRS = { type: 'array', items: { type: 'string' } };
+const FILL_SCHEMA = {
+  type: 'object',
+  properties: {
+    business_name: STR, business_type: STR, location: STR, goal: STR, description: STR, target_customer: STR,
+    differentiators: STR, proof: STR, credentials: STR, brand_style: STR, services: STRS, offers: STRS, details: STRS,
+  },
+  required: ['business_name', 'business_type', 'location', 'services', 'offers', 'goal', 'description', 'target_customer', 'differentiators', 'proof', 'credentials', 'details', 'brand_style'],
+};
+
+// deno-lint-ignore no-explicit-any
+const keepParas = (v: unknown, max: number) => fixDashes(raw(v)).replace(/\r/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, max);
+function adText(ad: any) {
+  // deno-lint-ignore no-explicit-any
+  const a: any = ad || {};
+  return [
+    `Concept: ${s(a.name, 120)} (${s(a.angle, 80)})`,
+    `Primary text: ${keepParas(a.primary || a.primary_short, 1500)}`,
+    `Headline: ${s(a.headline || (a.headlines || [])[0], 120)}`,
+    `Text on image: ${s(a.overlay, 120)}`,
+    `Button: ${s(a.cta, 40)}`,
+  ].join('\n');
+}
+
+function formPrompt(c: Campaign, plan: Plan, ad: unknown) {
+  return `You are an expert Meta lead ads strategist. Write the Meta Instant Form that follows the ad below, for a local business.
+${campaignBlock(c, plan)}
+
+THE AD:
+${adText(ad)}
+
+WHERE THE CLICK GOES: ${afterClick(plan, c)}
+
+Message match: the form headline continues the exact offer and promise from the ad. Keep it short. Ask only what the business needs to follow up. One or two qualifying questions at most, multiple choice where possible. Questions can ask what they want, when, and how to reach them. Never ask about health, symptoms, pain, medications, body, insurance, income or age.
+If the business hasn't said how fast it calls back, write "[when we'll call]". privacy_note starts with "[link to their privacy policy]". Never invent prices, ratings, guarantees, policies, coupons, texts, saved offers or urgency. ${URGENCY_RULE} cta (the thank-you button): View Website or Call Business. Plain, warm language. ${NO_DASHES}
+AD RULES:
+${plan.rules.map((r) => '- ' + r).join('\n')}
+Return JSON: form_headline (under 60 characters), intro, questions ({question, options}), contact_fields, privacy_note, thank_you_headline, thank_you_text (what happens next), cta, follow_up.`;
+}
+const FORM_SCHEMA = {
+  type: 'object',
+  properties: {
+    form_headline: { type: 'string' }, intro: { type: 'string' },
+    questions: { type: 'array', items: { type: 'object', properties: { question: { type: 'string' }, options: { type: 'array', items: { type: 'string' } } }, required: ['question', 'options'] } },
+    contact_fields: { type: 'array', items: { type: 'string' } }, privacy_note: { type: 'string' },
+    thank_you_headline: { type: 'string' }, thank_you_text: { type: 'string' }, cta: { type: 'string' }, follow_up: { type: 'string' },
+  },
+  required: ['form_headline', 'intro', 'questions', 'contact_fields', 'privacy_note', 'thank_you_headline', 'thank_you_text', 'cta', 'follow_up'],
+};
+
+function pagePrompt(c: Campaign, plan: Plan, ad: unknown) {
+  return `You are an expert direct-response landing page strategist and conversion copywriter. Write a single-page funnel that continues the exact promise made in the ad and moves the visitor toward one clear action.
+${campaignBlock(c, plan)}
+
+THE AD:
+${adText(ad)}
+
+Message match is non-negotiable. One page, one action. Choose the page type: Lead generation, Direct offer or High-ticket consultation. The hero says what this is, why care, what to do. Explain the real offer clearly. Benefits in customer language, no vague headings. Proof items come only from the Proof and Credentials answers; if there are none, write What You Can Expect points. ${PROOF_RULE} Never invent ratings, quotes, client counts, awards, scarcity or guarantees. Process: 3 steps, including what happens after the form. Answer the 3 to 5 biggest objections as FAQs; if an answer isn't in the information above, write it as a [placeholder for the owner], and never invent policies. The shortest form that still lets them follow up; never ask about health, insurance, income or age. ${NO_DASHES}
+AD RULES:
+${plan.rules.map((r) => '- ' + r).join('\n')}
+Return JSON: page_type, headline, subheadline, cta, offer, benefits (3, "Title: one sentence"), proof, process, faqs ({q, a}), form_fields.`;
+}
+const PAGE_SCHEMA = {
+  type: 'object',
+  properties: {
+    page_type: { type: 'string' }, headline: { type: 'string' }, subheadline: { type: 'string' }, cta: { type: 'string' }, offer: { type: 'string' },
+    benefits: { type: 'array', items: { type: 'string' } }, proof: { type: 'array', items: { type: 'string' } }, process: { type: 'array', items: { type: 'string' } },
+    faqs: { type: 'array', items: { type: 'object', properties: { q: { type: 'string' }, a: { type: 'string' } }, required: ['q', 'a'] } },
+    form_fields: { type: 'array', items: { type: 'string' } },
+  },
+  required: ['page_type', 'headline', 'subheadline', 'cta', 'offer', 'benefits', 'proof', 'process', 'faqs', 'form_fields'],
+};
+
+const LIMITS: Record<string, string> = {
+  headline: 'under 40 characters',
+  description: 'under 30 characters',
+  overlay: '8 words or fewer',
+  primary: 'short paragraphs, hook first, call to action last',
+  video: 'spoken words for a short vertical video, plain and natural',
+};
+const STYLES: Record<string, string> = {
+  shorter: 'Make it shorter.',
+  punchier: 'Make it punchier and more direct.',
+  warmer: 'Make it warmer and friendlier.',
+  clearer: 'Make the next step clearer and more direct. Never add limited, filling up, last chance, today only or don\'t wait unless the offer has a real end date.',
+};
+
+function rewritePrompt(c: Campaign, plan: Plan, ad: unknown, field: string, text: string, style: string, how: string) {
+  const kind = field.startsWith('headline') ? 'headline' : field.startsWith('description') ? 'description' : field === 'overlay' ? 'overlay' : field.startsWith('video_') ? 'video' : 'primary';
+  return `Rewrite this one piece of a Meta ad for ${or(c.business_name)}.
+${campaignBlock(c, plan)}
+
+THE AD:
+${adText(ad)}
+
+WHERE THE CLICK GOES: ${afterClick(plan, c)}
+
+THE TEXT TO REWRITE (${kind}, ${LIMITS[kind]}):
+${text}
+
+HOW: ${how ? how : STYLES[style] || STYLES.punchier}
+Keep the same offer, prices, facts and angle. Never invent reviews, ratings, results, prices, deadlines, guarantees or credentials. ${URGENCY_RULE} ${VIEWER_RULE} Keep every [placeholder in square brackets] exactly as written. ${VOICE} ${emojiRule(c)} ${NO_DASHES}
+AD RULES:
+${plan.rules.map((r) => '- ' + r).join('\n')}
+Return JSON: text.`;
+}
+
+// ---------- Text built by code (copied by the member) ----------
+function moreVersionsText(c: Campaign, plan: Plan, ad: unknown) {
+  return `Create 6 new versions of this ad while keeping the same offer and core strategic angle.
+
+${adText(ad)}
+
+The business: ${or(c.business_name)}, ${or(c.location)}. Offer: ${or(c.offer_text)}. Verified proof: ${or(c.proof_text)}. Credentials: ${or(c.credentials_text)}. Facts from their website: ${or(c.site_details.join('; '))}.
+${FACTS_RULE}
+
+Change only one major variable at a time: 2 new headline treatments, 2 new visual layouts, 1 different CTA treatment, 1 alternative proof or trust treatment (only if verified proof is available; if not, make a third headline treatment instead). Keep the audience, offer, positioning, and campaign goal consistent. Do not invent new proof, pricing, guarantees, urgency, testimonials, ratings, or results. Headlines under 40 characters, descriptions under 30, text on image 8 words or fewer. Keep every [placeholder]. No before and after layouts. ${NO_DASHES} For each version, explain exactly what changed.
+
+For every new visual layout: ${imageRules(plan, c)}
+
+Ad rules:
+${plan.rules.map((r) => '- ' + r).join('\n')}`;
+}
+
+function pageBuildText(c: Campaign, plan: Plan, ad: unknown, page: unknown) {
+  // deno-lint-ignore no-explicit-any
+  const p: any = page || {};
+  // deno-lint-ignore no-explicit-any
+  const lines = (v: unknown) => items(v).map((x: any) => (typeof x === 'object' && x ? `${s(x.q)}: ${s(x.a)}` : s(x))).filter(Boolean).join('\n');
+  return `Build this landing page as a one-page app here in Base44, for a Meta ad campaign I'm running for ${or(c.business_name)}.
+
+${campaignBlock(c, plan)}
+
+THE AD IT FOLLOWS:
+${adText(ad)}
+
+THE PAGE COPY:
+Type: ${s(p.page_type)}
+Headline: ${s(p.headline)}
+Subheadline: ${s(p.subheadline)}
+Button: ${s(p.cta)}
+Offer: ${s(p.offer)}
+Benefits:
+${lines(p.benefits)}
+Proof:
+${lines(p.proof)}
+How it works:
+${lines(p.process)}
+FAQs:
+${lines(p.faqs)}
+Form fields: ${lines(p.form_fields)}
+
+One public page, no login. Every button scrolls to the form. Save every submission with the date and any utm_ values, then show a thank-you screen saying what happens next. A private admin page of leads with a status (New, Contacted, Booked) and CSV export. Add the Meta Pixel base code in the page head with this ID: [Meta Pixel ID], and fire a Lead event when the form is sent. No fake customers or staff; labeled placeholders where a real photo belongs. Claim nothing not written here. ${NO_DASHES}
+
+Ad rules:
+${plan.rules.map((r) => '- ' + r).join('\n')}`;
+}
+
+// Accepts lists or text (a member may have edited them as one item per line).
+const items = (v: unknown) => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\n+/) : []);
+// deno-lint-ignore no-explicit-any
+function questionText(q: any) {
+  if (typeof q === 'string') return s(q, 200);
+  const opts = items(q?.options).map((o) => s(o, 80)).filter(Boolean).join(' / ');
+  return `${s(q?.question, 200)}${opts ? ` (${opts})` : ''}`;
+}
+
+// deno-lint-ignore no-explicit-any
+function launchText(c: Campaign, plan: Plan, ads: any[], funnel: any, mode: string) {
+  const month = new Date().toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'America/Chicago' });
+  const name = c.business_name || '[business name]';
+  const area = c.location || '[city]';
+  // deno-lint-ignore no-explicit-any
+  const f: any = funnel && typeof funnel === 'object' ? funnel : {};
+  let where = '';
+  if (plan.destination === 'instant_form') {
+    const form = f.instant_form && typeof f.instant_form === 'object' ? f.instant_form : null;
+    where = form
+      ? `An Instant Form. Headline: ${s(form.form_headline)}. Intro: ${s(form.intro)}. Questions: ${items(form.questions).map(questionText).filter(Boolean).join('; ') || 'none'}. Contact fields: ${items(form.contact_fields).map((x) => s(x, 40)).filter(Boolean).join(', ') || 'name, phone, email'}. Privacy policy link: ${s(form.privacy_note)}. Thank-you screen: ${s(form.thank_you_headline)}. ${s(form.thank_you_text)}`
+      : 'An Instant Form with name, phone and email, a privacy policy link, and a short thank-you screen saying the business will be in touch.';
+  } else if (plan.destination === 'landing_page') {
+    where = `The landing page ${c.cta_url || '(ask me for the page link)'}.${f.landing_page?.headline ? ` The page headline is "${s(f.landing_page.headline)}", so the ads and page match.` : ''} Conversion location: Website. It needs the Meta pixel with a Lead event when the form is sent. If that isn't set up, help me set it up or switch to an Instant Form.`;
+  } else {
+    where = `Their website ${c.website || '(ask me for the link)'}. Conversion location: Website, optimized for purchases. It needs the Meta pixel tracking purchases; check that first.`;
+  }
+  const adLines = (Array.isArray(ads) ? ads : []).slice(0, 3).map((a: any) =>
+    `Ad "${name} - ${s(a?.name, 80)} - ${/video/i.test(str(a?.format)) ? 'Video' : 'Image'}"
+Primary text:
+${keepParas(a?.primary, 1500)}
+Headline: ${s(a?.headline, 120)}
+Description: ${s(a?.description, 80)}
+Button: ${plan.destination === 'instant_form' && !/^(sign up|get quote|learn more)$/i.test(s(a?.cta, 40)) ? (/quote|estimate/i.test(s(a?.cta, 40)) ? 'Get Quote' : 'Sign Up') : s(a?.cta, 40)}`
+  ).join('\n\n');
+  const settings = `Campaign: "${name} - ${plan.goal} - ${month}". Objective: ${plan.objective}. Advantage campaign budget: $${plan.daily_budget} a day.
+Ad set: "${name} - ${area} - Broad". Optimize for ${plan.optimization}. ${plan.audience}. Advantage+ placements.${plan.special ? ' Declare the special ad category; the area must be at least 15 miles.' : ''}
+Where ads send people: ${where}
+
+Ads:
+${adLines || '(none switched on)'}
+
+If any ad text still has [square brackets], ask me to fill it in first.
+
+Ad rules:
+${plan.rules.map((r) => '- ' + r).join('\n')}`;
+  if (mode === 'claude') {
+    return `I'm a freelance marketer. Use your Meta Ads connector to set up this campaign for my client, ${name} in ${area}, in their ad account. Everything must be created PAUSED: never turn anything on. First list the ad accounts and Pages you can see and ask me which ones to use. I'll attach the ad images (or videos) in this chat; ask me for any you need. Create the campaign, ad set, ${plan.destination === 'instant_form' ? 'Instant Form (if your connector can; if not, tell me and I will build the form by hand), ' : ''}and ads exactly as below, then give me a short summary of what you created and the preview links, and tell me anything you couldn't do so I can do it by hand in Ads Manager.
+
+${settings}`;
+  }
+  return `I'm a freelance marketer launching a Meta ad campaign for my client, ${name} in ${area}. I'm building it myself in Meta Ads Manager. Walk me through it one step at a time: exactly where to click and what to type, then wait for me to say done. If I send a screenshot, tell me what to change. Everything stays off until my client approves. Start by checking I'm in the right ad account and Facebook Page.
+
+${settings}`;
+}
+
+// Practice business for trying the tool (made up: no real business, phone or street).
+const PRACTICE = {
+  business_name: 'Glow Aesthetics', website: '', location: 'Austin, TX', business_type: 'health_beauty',
+  business_description: 'A small med spa offering facials, laser hair removal and wrinkle relaxer treatments.',
+  product: 'HydraFacial', services: ['HydraFacial', 'Laser hair removal', 'Wrinkle relaxers', 'Chemical peels'],
+  offer_text: '$50 off your first HydraFacial', offer_help: false, goal: 'appointments', daily_budget: 20, radius_miles: 10,
+  target_customer: 'People nearby who want a fresh, natural glow', differentiators: 'Nurse-led treatments in a calm, private studio.',
+  proof_text: '', credentials_text: 'Licensed registered nurses', brand_colors: '#c9a27e, #2f2a26', brand_style: 'calm, warm, minimal',
+  assets_text: '', no_emojis: false, site_details: [],
+};
+
+// ---------- Cleaning up what the AI returns ----------
+const EMOJI = /[\u{1F000}-\u{1FAFF}\u{2190}-\u{23FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{20E3}]/gu;
+const noEmoji = (v: string) => v.replace(EMOJI, '').replace(/[ \t]{2,}/g, ' ').replace(/ +([.,!?;:])/g, '$1').replace(/\n[ \t]+/g, '\n').replace(/[ \t]+\n/g, '\n').trim();
+function clean(v: unknown, max = 2000) {
+  return fixDashes(raw(v))
+    .replace(/[ \t]+,/g, ',')
+    .replace(/,\s*,/g, ',')
+    .replace(/[ \t]{2,}/g, ' ')
+    .trim()
+    .slice(0, max);
+}
+// Sentences end at . ! or ? followed by a space and a capital letter, but not after common abbreviations,
+// initials or times (so "Dr. Lee", "$99.50", "glowspa.com" and "7 a.m." stay whole).
+const ABBR = /(\b(Dr|Mr|Mrs|Ms|St|Mt|Ave|Rd|Blvd|Ste|Inc|Co|Jr|Sr|vs|No|approx|etc)\.|\b[A-Z]\.|\b[ap]\.m\.)$/i;
+function sentences(text: string) {
+  const out: string[] = [];
+  let start = 0;
+  const re = /[.!?]["')\]]*\s+(?=["'(\[]?[A-Z0-9$])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const end = m.index + m[0].trimEnd().length;
+    if (ABBR.test(text.slice(start, end))) continue;
+    out.push(text.slice(start, end).trim());
+    start = m.index + m[0].length;
+  }
+  out.push(text.slice(start).trim());
+  return out.filter(Boolean);
+}
+// Primary text in short paragraphs: hook alone first, 1 to 2 sentences per paragraph, the action alone last.
+// Line breaks the AI gave are kept (a list stays a list).
+function paragraphs(text: string) {
+  const t = clean(text, 3000).replace(/\r/g, '');
+  if (/\n\s*\n/.test(t)) return t.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean).join('\n\n');
+  if (/\n/.test(t)) return t.split(/\n/).map((p) => p.trim()).filter(Boolean).join('\n\n');
+  const parts = sentences(t);
+  if (parts.length <= 2) return t;
+  const out = [parts[0]];
+  const middle = parts.slice(1, -1);
+  for (let i = 0; i < middle.length; i += 2) out.push(middle.slice(i, i + 2).join(' '));
+  out.push(parts[parts.length - 1]);
+  return out.join('\n\n');
+}
+const arr = (v: unknown, n: number, max: number) =>
+  (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\n+/) : []).map((x) => clean(x, max).replace(/^\s*(?:[-*\u2022]\s+|\d{1,2}[.)]\s+)/, '')).filter(Boolean).slice(0, n);
+const words = (v: string) => v.split(/\s+/).filter(Boolean).length;
+
+// deno-lint-ignore no-explicit-any
+function cleanConcept(x: any, plan: Plan, c: Campaign) {
+  const isVideo = /^video$/i.test(str(x?.format)) && x?.video && typeof x.video === 'object';
+  const strip = (v: string) => (c.no_emojis ? noEmoji(v) : v);
+  const video = isVideo
+    ? {
+      format: clean(x.video.format, 40), duration: clean(x.video.duration, 40), opening_visual: clean(x.video.opening_visual, 300),
+      hook: strip(clean(x.video.hook, 300)), body: strip(clean(x.video.body, 1200)), cta: strip(clean(x.video.cta, 200)), shots: arr(x.video.shots, 8, 300),
+    }
+    : null;
+  // For an Instant Form the button can't promise booking.
+  let cta = clean(x?.cta, 40);
+  if (plan.destination === 'instant_form' && !/^(sign up|get quote|learn more)$/i.test(cta)) cta = /quote|estimate/i.test(cta) ? 'Get Quote' : 'Sign Up';
+  const concept = {
+    name: clean(x?.name, 80), angle: clean(x?.angle, 80), why: clean(x?.why, 400),
+    primary_short: strip(paragraphs(raw(x?.primary_short))), primary_medium: strip(paragraphs(raw(x?.primary_medium))),
+    headlines: arr(x?.headlines, 5, 120).map(strip), descriptions: arr(x?.descriptions, 3, 80).map(strip),
+    cta, cta_why: clean(x?.cta_why, 300), overlay: strip(clean(x?.overlay, 120)),
+    image_prompt: `${clean(x?.image_prompt, 3000)}\n\n${imageRules(plan, c, !!video)}`,
+    format: video ? 'video' : 'static', creative_direction: clean(x?.creative_direction, 300),
+    motion_prompt: video ? `${clean(x?.motion_prompt, 1200)}\n\n${imageRules(plan, c, true)}` : '',
+    video,
+    warnings: [] as string[],
+  };
+  // Warnings the member sees (nothing is changed or blocked).
+  concept.headlines.forEach((h, i) => { if (h.length >= 40) concept.warnings.push(`Headline ${i + 1} is ${h.length} characters (keep it under 40).`); });
+  concept.descriptions.forEach((d, i) => { if (d.length >= 30) concept.warnings.push(`Description ${i + 1} is ${d.length} characters (keep it under 30).`); });
+  if (words(concept.overlay) > 8) concept.warnings.push(`The text on the image is ${words(concept.overlay)} words (keep it to 8 or fewer).`);
+  if ([...concept.headlines, ...concept.descriptions, concept.overlay].some((v) => /\[[^\]]*\]/.test(v))) concept.warnings.push('A headline, description or the text on the image has a [blank]. Fill it or pick another.');
+  return concept;
+}
+
+// deno-lint-ignore no-explicit-any
+async function ask(base44: any, prompt: string, schema: unknown, ms: number) {
+  const raw = await withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM({ prompt, response_json_schema: schema }), ms, 'The AI took too long. Try again.');
+  if (typeof raw !== 'string') return raw || {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    throw new Error('The AI sent back something unreadable. Try again.');
+  }
+}
+
+export default async function (req: Request) {
+  const left = makeDeadline(85_000);
+  try {
+    const base44 = createClientFromRequest(req);
+    const user = await base44.auth.me();
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const body = await req.json().catch(() => null);
+    const task = str(body?.task);
+    const c = readCampaign(body?.campaign);
+    const plan = makePlan(c);
+
+    if (task === 'plan') return Response.json({ plan });
+
+    if (task === 'fill') {
+      const site = str(body?.site_text).slice(0, 20_000);
+      if (site.length < 100) return Response.json({ error: "There wasn't enough text on their website to fill anything in." }, { status: 400 });
+      const d = await ask(base44, fillPrompt(site), FILL_SCHEMA, left(AI_TIMEOUT));
+      const fields = {
+        business_name: clean(d.business_name, 120),
+        business_type: TYPES.includes(str(d.business_type)) ? str(d.business_type) : '',
+        location: clean(d.location, 120),
+        goal: GOALS.includes(str(d.goal)) ? str(d.goal) : '',
+        business_description: clean(d.description, 600),
+        target_customer: clean(d.target_customer, 200),
+        differentiators: noBoasts(clean(d.differentiators, 600)),
+        // Boasts aren't proof: drop any sentence with them.
+        // Health businesses: no reviews that describe results.
+        proof_text: noBoasts(clean(d.proof, 600)).split(/(?<=[.!?;])\s+/).filter((x) => !(HEALTH.test(site) && /(after \d+|results?|difference|lost \d|pounds|years younger|transform)/i.test(x))).join(' ').trim(),
+        credentials_text: clean(d.credentials, 400),
+        brand_style: clean(d.brand_style, 200),
+      };
+      const services = arr(d.services, 6, 60);
+      // An offer says what the customer gets; a menu link or a "regularly $X" price isn't one.
+      const offers = arr(d.offers, 8, 300)
+        .map((o) => o.replace(/^(limited[- ]time( offer)?|special offer|offer)\s*[:,\-]\s*/i, ''))
+        .filter((o) => !/\b(regularly|reg\.?|was)\s*\$\d|\b(see|view) our\b|\bcheck out\b|\$\d[\d,.]*\s+\$\d/i.test(o) && words(o) >= 3 && /(free|\boff\b|%|\$\d|discount|save|complimentary|bonus|gift|included|buy one|get one|\d for \d|two for one|half (price|off))/i.test(o))
+        .slice(0, 3);
+      const details = arr(d.details, 6, 200).filter((x) => !/\$\d[\d,.]*\s+\$\d/.test(x));
+      const rx = services.filter((x) => RX_DRUGS.test(x));
+      const warnings = rx.length
+        ? [`${rx.join(', ')}: advertising prescription treatments needs Meta certification (LegitScript). Promote the consultation or the experience instead.`]
+        : [];
+      return Response.json({ fields, services, offers, details, warnings });
+    }
+
+    if (task === 'ads') {
+      if (!c.business_name || !(c.product || c.services.length || c.offer_text)) {
+        return Response.json({ error: 'Add the business name and what you are promoting first.' }, { status: 400 });
+      }
+      const d = await ask(base44, adsPrompt(c, plan), ADS_SCHEMA, left(AI_TIMEOUT));
+      const concepts = (Array.isArray(d.concepts) ? d.concepts : []).slice(0, 3).map((x: unknown) => cleanConcept(x, plan, c));
+      if (concepts.length < 3) throw new Error('The AI wrote fewer than 3 ads. Try again.');
+      if (concepts.some((x: { headlines: string[]; primary_short: string }) => !x.headlines.length || !x.primary_short)) throw new Error('The AI left an ad unfinished. Try again.');
+      const suggested_offer = c.offer_text || !c.offer_help ? '' : clean(d.suggested_offer, 300);
+      return Response.json({ concepts, suggested_offer, plan });
+    }
+
+    if (task === 'rewrite') {
+      const text = str(body?.text).slice(0, 3000);
+      const field = str(body?.field);
+      if (!text) return Response.json({ error: 'Nothing to rewrite.' }, { status: 400 });
+      if (field === 'image_prompt' || field === 'motion_prompt') return Response.json({ error: 'Edit this one by hand.' }, { status: 400 });
+      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(AI_TIMEOUT));
+      let out = field.startsWith('primary') ? paragraphs(raw(d.text)) : field.startsWith('video_') ? clean(d.text, 1200) : clean(d.text, 400);
+      if (c.no_emojis) out = noEmoji(out);
+      return Response.json({ text: out });
+    }
+
+    if (task === 'form') {
+      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(AI_TIMEOUT));
+      return Response.json({
+        instant_form: {
+          form_headline: clean(d.form_headline, 80), intro: clean(d.intro, 600),
+          // deno-lint-ignore no-explicit-any
+          questions: (Array.isArray(d.questions) ? d.questions : [])
+            .map((q: any) => ({ question: clean(q?.question, 200), options: arr(q?.options, 6, 80) }))
+            .filter((q: { question: string; options: string[] }) => q.question && !SENSITIVE.test([q.question, ...q.options].join(' ')) && !(plan.health && HEALTH_Q.test([q.question, ...q.options].join(' '))))
+            .slice(0, 2),
+          contact_fields: arr(d.contact_fields, 5, 40), privacy_note: clean(d.privacy_note, 300),
+          thank_you_headline: clean(d.thank_you_headline, 120), thank_you_text: clean(d.thank_you_text, 600),
+          cta: clean(d.cta, 40), follow_up: clean(d.follow_up, 600),
+        },
+      });
+    }
+
+    if (task === 'page') {
+      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(AI_TIMEOUT));
+      const landing_page = {
+        page_type: clean(d.page_type, 60), headline: clean(d.headline, 160), subheadline: clean(d.subheadline, 300), cta: clean(d.cta, 60), offer: clean(d.offer, 600),
+        benefits: arr(d.benefits, 3, 300), proof: arr(d.proof, 6, 300), process: arr(d.process, 4, 300),
+        // deno-lint-ignore no-explicit-any
+        faqs: (Array.isArray(d.faqs) ? d.faqs : []).slice(0, 5).map((f: any) => ({ q: clean(f?.q, 200), a: clean(f?.a, 600) })).filter((f: { q: string }) => f.q),
+        form_fields: arr(d.form_fields, 6, 40).filter((x) => !SENSITIVE.test(x)),
+      };
+      return Response.json({ landing_page, build_prompt: pageBuildText(c, plan, body?.ad, landing_page) });
+    }
+
+    if (task === 'pagebuild') return Response.json({ build_prompt: pageBuildText(c, plan, body?.ad, body?.landing_page) });
+    if (task === 'practice') return Response.json({ campaign: PRACTICE });
+    if (task === 'more') return Response.json({ text: moreVersionsText(c, plan, body?.ad) });
+    if (task === 'launch') return Response.json({ text: launchText(c, plan, Array.isArray(body?.ads) ? body.ads : [], body?.funnel, str(body?.mode)) });
+
+    return Response.json({ error: 'Unknown task.' }, { status: 400 });
+  } catch (error) {
+    return Response.json({ error: (error as Error)?.message || 'That didn\'t work. Try again.' }, { status: 500 });
+  }
+}
