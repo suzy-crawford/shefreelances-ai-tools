@@ -23,7 +23,6 @@ function makeDeadline(totalMs: number) {
   return (want: number) => Math.max(0, Math.min(want, end - Date.now() - 500));
 }
 
-const AI_TIMEOUT = 75_000;
 const WRITER = 'claude-sonnet-5';
 const NICHE_LIB: [string, RegExp, string, string[][]][] = [
   ["med_spa", /(med ?spa|aesthetic|botox|filler|injectable|laser|facial|skin ?care|derma|lash|brow|body sculpt|hydrafacial)/i, "Some cosmetic procedure ads have extra platform restrictions. Use consented imagery, avoid personal-attribute assumptions, and never imply guaranteed medical results.", [["Transformation", "A look at our real client results.", ""], ["First-Time Offer", "Your first facial, $49 (regularly $120).", ""], ["The Process Video", "Come behind the scenes of a HydraFacial appointment.", ""], ["The Myth Buster", "Botox doesn't freeze your face.", "Claims must be qualified, medically accurate and appropriate to the actual procedure."], ["Social Proof", "I've been coming here for 2 years and my skin has never looked better.", ""], ["Event / Season", "Get wedding-ready with our bridal glow package.", ""]]],
@@ -435,15 +434,14 @@ const arr = (v: unknown, n: number, max: number) =>
   (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/\n+/) : []).map((x) => clean(x, max).replace(/^\s*(?:[-*\u2022]\s+|\d{1,2}[.)]\s+)/, '')).filter(Boolean).slice(0, n);
 const words = (v: string) => v.split(/\s+/).filter(Boolean).length;
 
-async function ask(base44: any, prompt: string, schema: unknown, ms: number, model = '') {
+async function ask(base44: any, prompt: string, schema: unknown, ms: number, model = '', fallbackMs?: () => number) {
   const call = (m: string) => withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM(m ? { prompt, response_json_schema: schema, model: m } : { prompt, response_json_schema: schema }), m ? ms : Math.min(ms, 45_000), 'The AI took too long. Try again.');
-  const start = Date.now();
   let raw;
   try {
     raw = await call(model);
   } catch (e) {
-    if (!model || Date.now() - start > ms - 30_000) throw e;
-    raw = await call('');
+    if (!model || !fallbackMs || fallbackMs() < 15_000) throw e;
+    raw = await withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM({ prompt, response_json_schema: schema }), fallbackMs(), 'The AI took too long. Try again.');
   }
   if (typeof raw !== 'string') return raw || {};
   try {
@@ -470,14 +468,14 @@ export default async function (req: Request) {
       const field = str(body?.field);
       if (!text) return Response.json({ error: 'Nothing to rewrite.' }, { status: 400 });
       if (field === 'image_prompt' || field === 'motion_prompt') return Response.json({ error: 'Edit this one by hand.' }, { status: 400 });
-      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(55_000), WRITER, () => left(28_000));
       let out = field.startsWith('primary') ? paragraphs(raw(d.text)) : field.startsWith('video_') ? clean(d.text, 1200) : clean(d.text, 400);
       if (c.no_emojis) out = noEmoji(out);
       return Response.json({ text: out });
     }
 
     if (task === 'form') {
-      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(55_000), WRITER, () => left(28_000));
       return Response.json({
         instant_form: {
           form_headline: clean(d.form_headline, 80), intro: clean(d.intro, 600),
@@ -494,7 +492,7 @@ export default async function (req: Request) {
     }
 
     if (task === 'page') {
-      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(55_000), WRITER, () => left(28_000));
       const landing_page = {
         page_type: clean(d.page_type, 60), headline: clean(d.headline, 160), subheadline: clean(d.subheadline, 300), cta: clean(d.cta, 60), offer: clean(d.offer, 600),
         benefits: arr(d.benefits, 3, 300), proof: arr(d.proof, 6, 300), process: arr(d.process, 4, 300),

@@ -345,7 +345,7 @@ mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offe
 r = await call({ task: 'ads', campaign: { ...base, offer_text: '20% off any treatment for new patients' } });
 check('writer: ads asks for claude-sonnet-5', g.__mock.calls[0]?.model === 'claude-sonnet-5', g.__mock.calls[0]?.model);
 check('writer: med spa gets Suzy niche angles', /ANGLES THAT WORK FOR THIS KIND OF BUSINESS/.test(lastPrompt()) && /Botox doesn't freeze your face/.test(lastPrompt()), null);
-check('writer: offer required in every ad', /Every ad names the offer \(20% off any treatment for new patients\)/.test(lastPrompt()), null);
+check('writer: offer required in every ad', /The ad names the offer \(20% off any treatment for new patients\)/.test(lastPrompt()), null);
 check('writer: old brochure voice gone', !/not like a copywriter/.test(lastPrompt()) && !/no clever or hype/.test(lastPrompt()) && /texting a friend/.test(lastPrompt()), null);
 check('writer: no invented customer stories rule', /Never invent stories, quotes or claims about their customers/.test(lastPrompt()), null);
 mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
@@ -354,10 +354,10 @@ check('writer: unknown niche gets angle categories', /ANGLE CATEGORIES \(pick fr
 check('writer: no offer -> sell the service', /There is no offer: sell the service/.test(lastPrompt()), null);
 mock(ME, (a: any, n: number) => { if (a.model) throw new Error('model unavailable'); return { concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }; });
 r = await call({ task: 'ads', campaign: base });
-check('writer: falls back to default model when Claude fails', r.status === 200 && g.__mock.calls.length === 2 && !g.__mock.calls[1].model, g.__mock.calls.map((x: any) => x.model));
+check('writer: falls back to default model when Claude fails', r.status === 200 && r.data.concepts.length === 3 && g.__mock.calls.length === 6 && g.__mock.calls.slice(3).every((x: any) => !x.model), g.__mock.calls.map((x: any) => x.model));
 mock(ME, () => { throw new Error('boom'); });
 r = await call({ task: 'ads', campaign: base });
-check('writer: both fail -> plain error, only 2 tries', r.status === 500 && g.__mock.calls.length === 2, r);
+check('writer: all fail -> plain error, one retry each', r.status === 500 && g.__mock.calls.length === 6, r);
 mock(ME, () => ({ text: 'Shorter one' }));
 await call({ task: 'rewrite', campaign: base, ad: concept(1), field: 'headline_1', text: 'Long headline', style: 'shorter' });
 check('writer: rewrite uses Claude too', g.__mock.calls[0]?.model === 'claude-sonnet-5', g.__mock.calls[0]);
@@ -384,6 +384,22 @@ check('photo: thin photo falls back to the shot line, weight loss rule', /^Room 
 mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
 r = await call({ task: 'ads', campaign: { ...base, assets_text: 'photos of our treatment room' } });
 check('photo: real photos -> build from them', /If I attached my real photos/.test(r.data.concepts[0].image_prompt), null);
+
+// ---- 3 ads written in parallel, one direction each ----
+mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: base });
+const ps = g.__mock.calls.map((x: any) => x.prompt);
+check('parallel: 3 calls, ads 1 2 3 of 3', ps.length === 3 && [1, 2, 3].every((n) => ps.some((p: string) => p.includes(`It is ad ${n} of 3`))), ps.length);
+check('parallel: 3 different directions and frameworks', /everyday problem/.test(ps.join()) && /coming up that makes now the time/.test(ps.join()) && /first visit or first order/.test(ps.join()) && /Problem, Agitate, Solve/.test(ps.join()) && /Before, After, Bridge/.test(ps.join()), null);
+mock(ME, (a: any) => { if (a.model && /It is ad 3 of 3/.test(a.prompt)) throw new Error('slow'); return { concept: concept(9) }; });
+r = await call({ task: 'ads', campaign: base });
+check('parallel: one slow ad falls back alone, still 3 ads', r.status === 200 && r.data.concepts.length === 3 && g.__mock.calls.length === 4, g.__mock.calls.length);
+mock(ME, (a: any) => (a.model ? { concept: concept(5) } : {}));
+r = await call({ task: 'ads', campaign: base });
+check('parallel: single concept answers are used', r.status === 200 && r.data.concepts.length === 3 && r.data.concepts[0].name === 'Concept 5', r.data.concepts?.[0]?.name);
+mock(ME, (a: any) => { if (a.model) throw new Error('nope'); return { text: 'ok' }; });
+r = await call({ task: 'rewrite', campaign: base, ad: concept(1), field: 'headline_1', text: 'Long headline', style: 'shorter' });
+check('rewrite: falls back to default model', r.status === 200 && r.data.text === 'ok' && g.__mock.calls.length === 2, r);
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);

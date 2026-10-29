@@ -266,8 +266,16 @@ function nicheHints(c: Campaign) {
   return `ANGLES THAT WORK FOR THIS KIND OF BUSINESS (example lines show the style, never copy their facts):\n${n[3].map((a) => `- ${a[0]}: "${a[1]}"${a[2] ? ` (Caution: ${a[2]})` : ''}`).join('\n')}${n[2] ? `\nNiche caution: ${n[2]}` : ''}\n\nOTHER ANGLE CATEGORIES:\n${cats}`;
 }
 
-function adsPrompt(c: Campaign, plan: Plan) {
-  return `You are a world-class direct response copywriter writing 3 Meta ads (Facebook and Instagram) for a local or small business. Today is ${today()}.
+// Each of the 3 ads is written in its own call, at the same time, each from a different direction.
+const AD_PLANS = [
+  ['an everyday problem or frustration this business solves', 'Problem, Agitate, Solve'],
+  ['a moment, occasion or season coming up that makes now the time', 'Before, After, Bridge'],
+  ['what the first visit or first order is actually like, taking away a worry or a question', 'a short "Say you..." scenario'],
+];
+
+function adsPrompt(c: Campaign, plan: Plan, n = 0) {
+  const [direction, framework] = AD_PLANS[n] || AD_PLANS[0];
+  return `You are a world-class direct response copywriter writing ONE Meta ad (Facebook and Instagram) for a local or small business. It is ad ${n + 1} of 3; the other two are written separately from other directions. Today is ${today()}.
 
 ${campaignBlock(c, plan, true)}
 
@@ -276,11 +284,11 @@ WHERE THE CLICK GOES: ${afterClick(plan, c)}
 ${nicheHints(c)}
 
 HOW TO WRITE THEM
-1. First pick 3 completely different reasons a real customer would buy from this business: a specific moment or situation, not a category (good: "holiday photos are 6 weeks out", "can only get away on a lunch break", "scared it'll look overdone"; bad: "Process and expectation", "Location convenience", "Desired outcome"). One ad = one reason.
-2. Ad 1 uses Problem, Agitate, Solve. Ad 2 uses Before, After, Bridge. Ad 3 is a short "Say you..." scenario or a direct offer ad.
-3. ${c.offer_text ? `Every ad names the offer (${c.offer_text}) in natural words, like a person would say it ("20% off your first treatment"), never pasted in brackets. Mention exclusions at most once, briefly.` : 'There is no offer: sell the service and the next step.'}
+1. Pick ONE specific reason a real customer would buy, from this direction: ${direction}. A specific moment or situation, not a category (good: "holiday photos are 6 weeks out", "can only get away on a lunch break", "scared it'll look overdone"; bad: "Process and expectation", "Location convenience", "Desired outcome").
+2. Write it as ${framework}.
+3. ${c.offer_text ? `The ad names the offer (${c.offer_text}) in natural words, like a person would say it ("20% off your first treatment"), never pasted in brackets. Mention exclusions at most once, briefly.` : 'There is no offer: sell the service and the next step.'}
 4. Include specific numbers and concrete details wherever the answers or general service facts allow.
-5. Every ad ends with a clear call to action that matches where the click goes, worded differently in each ad.
+5. It ends with a clear call to action that matches where the click goes.
 6. The hook makes the reader feel the moment (the photo, the busy week, the nerves before a first visit) without describing them. Write it the way you'd tell a friend about it, with some warmth and personality.
 
 ${VOICE}
@@ -289,7 +297,7 @@ ${FACTS_RULE}
 ${PROOF_RULE}
 ${URGENCY_RULE}
 
-For each concept: name (2 to 5 words naming the reason, like "Holiday photos" or "Lunch-break visit"); angle (the framework: Problem Agitate Solve, Before After Bridge, Scenario or Direct offer); why (1 to 2 sentences: the customer's real motivation); primary_short (40 to 70 words) and primary_medium (90 to 140 words), both the same reason: hook first on its own line, short paragraphs separated by a blank line, call to action last on its own line, use the business name where natural.
+For the concept: name (2 to 5 words naming the reason, like "Holiday photos" or "Lunch-break visit"); angle (the framework: Problem Agitate Solve, Before After Bridge, Scenario or Direct offer); why (1 to 2 sentences: the customer's real motivation); primary_short (40 to 70 words) and primary_medium (90 to 140 words), both the same reason: hook first on its own line, short paragraphs separated by a blank line, call to action last on its own line, use the business name where natural.
 headlines: 5, each under 40 characters, specific to this ad's reason (offer-led, outcome, curiosity, situation, direct action). Freebie only if the offer says free, social proof only with verified proof.
 descriptions: 3, each under 30 characters. cta: the best Meta button for where the click goes (for an Instant Form only Sign Up, Get Quote or Learn More; for a website Shop Now, Learn More or Book Now), cta_why in one sentence. overlay: text on the image, 8 words or fewer, punchy and specific (the offer or the reason), never a slogan like "Your Goals, Our Expertise".
 creative_direction: one line naming the shot. photo: the image for this ad, one concrete scene a phone could capture at this business, matching this ad's reason (good: a family sharing a pizza at a brick-walled table; a roofer laying shingles on a sunny morning; a woman relaxing in a treatment chair with eyes closed while a provider talks; bad: "imagery that conveys trust"). Fill: subject (who or what), setting (where, with 1 or 2 real details), action (what is happening), mood (2 to 4 words), lighting, angle (camera angle and distance), details (1 sentence of extra details that make it feel real and local), text_space ("top" or "bottom", whichever the scene leaves empty). People are welcome when they make it real. No text, signs, logos or before and after in the scene. motion: 1 sentence for an 8-second video clip of that scene: what moves and how the camera moves.
@@ -299,7 +307,7 @@ ${emojiRule(c)} ${NO_DASHES}
 AD RULES FOR THIS BUSINESS (these win over everything above):
 ${plan.rules.map((r) => '- ' + r).join('\n')}
 
-Return JSON: concepts (exactly 3) and suggested_offer (the offer you suggested, or empty).`;
+Return JSON: concept (this one ad) and suggested_offer (the offer you suggested, or empty).`;
 }
 
 const CONCEPT = {
@@ -322,7 +330,7 @@ const CONCEPT = {
   },
   required: ['name', 'angle', 'why', 'primary_short', 'primary_medium', 'headlines', 'descriptions', 'cta', 'cta_why', 'overlay', 'photo', 'motion', 'format', 'creative_direction'],
 };
-const ADS_SCHEMA = { type: 'object', properties: { concepts: { type: 'array', items: CONCEPT }, suggested_offer: { type: 'string' } }, required: ['concepts', 'suggested_offer'] };
+const ADS_SCHEMA = { type: 'object', properties: { concept: CONCEPT, suggested_offer: { type: 'string' } }, required: ['concept', 'suggested_offer'] };
 
 function fillPrompt(siteText: string) {
   return `You are helping a beginner freelance marketer plan a Meta ad campaign for a local business. Read the website text below and pull out the facts she needs. Only use what is on the website. Never invent offers, prices, reviews, credentials or services. If the text is a domain-for-sale, coming soon or placeholder page, return every field empty.
@@ -658,16 +666,15 @@ function cleanConcept(x: any, plan: Plan, c: Campaign) {
 }
 
 // deno-lint-ignore no-explicit-any
-async function ask(base44: any, prompt: string, schema: unknown, ms: number, model = '') {
+async function ask(base44: any, prompt: string, schema: unknown, ms: number, model = '', fallbackMs?: () => number) {
   const call = (m: string) => withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM(m ? { prompt, response_json_schema: schema, model: m } : { prompt, response_json_schema: schema }), m ? ms : Math.min(ms, 45_000), 'The AI took too long. Try again.');
-  const start = Date.now();
   let raw;
   try {
     raw = await call(model);
   } catch (e) {
-    // The writer model failed fast (not available, overloaded): one try on the default model if there's time.
-    if (!model || Date.now() - start > ms - 30_000) throw e;
-    raw = await call('');
+    // Slow or failed on the writer model: one try on the faster default model if there's still time.
+    if (!model || !fallbackMs || fallbackMs() < 15_000) throw e;
+    raw = await withTimeout(base44.asServiceRole.integrations.Core.InvokeLLM({ prompt, response_json_schema: schema }), fallbackMs(), 'The AI took too long. Try again.');
   }
   if (typeof raw !== 'string') return raw || {};
   try {
@@ -727,8 +734,16 @@ export default async function (req: Request) {
       if (!c.business_name || !(c.product || c.services.length || c.offer_text)) {
         return Response.json({ error: 'Add the business name and what you are promoting first.' }, { status: 400 });
       }
-      const d = await ask(base44, adsPrompt(c, plan), ADS_SCHEMA, left(AI_TIMEOUT), WRITER);
-      const concepts = (Array.isArray(d.concepts) ? d.concepts : []).slice(0, 3).map((x: unknown) => cleanConcept(x, plan, c));
+      // 3 ads at once: Claude gets 50 seconds each, then the default model gets what's left.
+      const results = await Promise.all([0, 1, 2].map((n) =>
+        ask(base44, adsPrompt(c, plan, n), ADS_SCHEMA, left(50_000), WRITER, () => left(30_000)).catch((e) => ({ __error: e }))
+      ));
+      const failed = results.find((d) => d && d.__error);
+      // deno-lint-ignore no-explicit-any
+      const raws = results.map((d: any, n) => (d && !d.__error ? d.concept ?? (Array.isArray(d.concepts) ? d.concepts[n] : undefined) : undefined)).filter(Boolean);
+      if (failed && raws.length < 3) throw failed.__error;
+      const d = results.find((x) => x && !x.__error) || {};
+      const concepts = raws.slice(0, 3).map((x: unknown) => cleanConcept(x, plan, c));
       if (concepts.length < 3) throw new Error('The AI wrote fewer than 3 ads. Try again.');
       if (concepts.some((x: { headlines: string[]; primary_short: string }) => !x.headlines.length || !x.primary_short)) throw new Error('The AI left an ad unfinished. Try again.');
       const suggested_offer = c.offer_text || !c.offer_help ? '' : clean(d.suggested_offer, 300);
@@ -740,14 +755,14 @@ export default async function (req: Request) {
       const field = str(body?.field);
       if (!text) return Response.json({ error: 'Nothing to rewrite.' }, { status: 400 });
       if (field === 'image_prompt' || field === 'motion_prompt') return Response.json({ error: 'Edit this one by hand.' }, { status: 400 });
-      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, rewritePrompt(c, plan, body?.ad, field, text, str(body?.style), s(body?.how, 300)), { type: 'object', properties: { text: { type: 'string' } }, required: ['text'] }, left(55_000), WRITER, () => left(28_000));
       let out = field.startsWith('primary') ? paragraphs(raw(d.text)) : field.startsWith('video_') ? clean(d.text, 1200) : clean(d.text, 400);
       if (c.no_emojis) out = noEmoji(out);
       return Response.json({ text: out });
     }
 
     if (task === 'form') {
-      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, formPrompt(c, plan, body?.ad), FORM_SCHEMA, left(55_000), WRITER, () => left(28_000));
       return Response.json({
         instant_form: {
           form_headline: clean(d.form_headline, 80), intro: clean(d.intro, 600),
@@ -764,7 +779,7 @@ export default async function (req: Request) {
     }
 
     if (task === 'page') {
-      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(AI_TIMEOUT), WRITER);
+      const d = await ask(base44, pagePrompt(c, plan, body?.ad), PAGE_SCHEMA, left(55_000), WRITER, () => left(28_000));
       const landing_page = {
         page_type: clean(d.page_type, 60), headline: clean(d.headline, 160), subheadline: clean(d.subheadline, 300), cta: clean(d.cta, 60), offer: clean(d.offer, 600),
         benefits: arr(d.benefits, 3, 300), proof: arr(d.proof, 6, 300), process: arr(d.process, 4, 300),
