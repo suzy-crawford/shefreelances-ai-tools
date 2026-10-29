@@ -101,6 +101,18 @@ mock(ME, (a: any) => { if (a.model) throw new Error('model unavailable'); return
 r = await call({ task: 'strategy', plan: spa });
 check('strategy: falls back to default model when Claude fails', r.status === 200 && g.__mock.calls.filter((c: any) => !c.model).length === 5, g.__mock.calls.map((c: any) => c.model));
 
+// ---- examples don't leak; offer days push the offer ----
+mock(ME, strategyLLM(7, (i) => (i === 3 ? { goal: 'offer', cta: 'Just follow so you do not miss the next one.' } : {})));
+r = await call({ task: 'strategy', plan: spa });
+check('offer day: follow/save CTA replaced with the client CTA', r.data.strategy.calendar[3].goal === 'offer' && r.data.strategy.calendar[3].cta === 'Comment a keyword: GLOW', r.data.strategy.calendar[3]);
+check('examples: labeled as other businesses, no nurse or facial example left', /from OTHER businesses and only show the style/.test(prompts().join()) && !/A nurse checks your skin/.test(prompts().join()) && !/Comment FACIAL/.test(prompts().join()), null);
+mock(ME, strategyLLM(7, (i) => (i === 3 ? { goal: 'offer', cta: 'Comment AFTERCARE and I will send the list' } : {})));
+r = await call({ task: 'strategy', plan: spa });
+check('offer day: a real specific CTA is kept', r.data.strategy.calendar[3].cta === 'Comment AFTERCARE and I will send the list', r.data.strategy.calendar[3].cta);
+mock(ME, strategyLLM(7, (i) => (i === 3 ? { goal: 'offer', cta: 'Follow for more' } : {})));
+r = await call({ task: 'strategy', plan: { ...spa, cta_type: 'follow' } });
+check('offer day: Just follow clients keep a follow CTA', r.data.strategy.calendar[3].cta === 'Follow for more', r.data.strategy.calendar[3].cta);
+
 // ---- posts ----
 const stratPlan = { ...spa, strategy: { positioning: 'Glow helps.', pillars: PILLARS.pillars.slice(0, 3), calendar: [
   { day: 1, pillar: 'First Visits', format: 'talking_head', goal: 'trust', hook: 'Your first facial, step by step.', idea: 'What happens', cta: 'Comment GLOW' },

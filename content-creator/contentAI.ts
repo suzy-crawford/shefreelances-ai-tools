@@ -147,15 +147,16 @@ Never: clever endings, punchlines, slogans, neat reversals, forced metaphors, dr
 Don't manufacture curiosity, shock or pain. Use the customer's world, in the industry's natural words; prefer concrete words over growth, results, success, transformation.
 Before returning, ask of each line: would this person say it out loud? Is the IDEA interesting, or only the wording? Could it be about any business? Am I inventing anything? If so, rewrite it.
 
-HOW IT SHOULD SOUND:
+HOW IT SHOULD SOUND (the examples below are from OTHER businesses and only show the style: never reuse their details, steps, staff or claims for this client):
 - Write the way the owner talks to a customer at the front desk, not like a brochure.
-- Short everyday words: "med spa" not "medical spa", "Botox" not "neuromodulator treatment".
+- Short everyday words their customers use, not industry jargon.
 - Every line says something specific: a real detail, a moment, a step, a question customers ask. If it could be on any business's page, cut it.
 - B-roll text: each line is a full, specific thought that moves a mini story or list forward, like texting a friend. No taglines.
-- Calls to action specific to the post: "Comment GLOW and I'll send you the price list" beats "Save this for later".
-- Weak: "Medical supervision makes a difference." Better: "A nurse checks your skin before anything touches it. That's why we'll sometimes say not today."
-- Weak hook: "Ever wonder what a medical spa facial really looks like?" Better: "Here's exactly what happens in your first facial with us, start to finish."
-- Weak CTA: "Save this for your next self-care day." Better: "Comment FACIAL and I'll send you what to do the week before."
+- Calls to action specific to the post: "Comment PRICES and I'll send you the price list" beats "Save this for later".
+- (A dog groomer) Weak: "We care about your pet." Better: "If a dog is shaking on the table, we stop and let them settle. A rushed groom is how nicks happen."
+- (A bakery) Weak hook: "Ever wonder how sourdough is made?" Better: "Here's what happens to tomorrow's sourdough, starting at 4pm today."
+- (A roofer) Weak CTA: "Save this for later." Better: "Comment ROOF and I'll send you the 5 things to check after a storm."
+- Every fact about this client (who does what, how a visit goes, what they check, what they say no to) must come from the CLIENT block. If you don't know it, say it as general know-how or leave it out.
 - Before you return, reread every line out loud and rewrite any that sounds like an ad, a slogan or a website.`;
 
 const BANNED = /(makes a difference|personalized care|long-term results|\bfocused on\b|\belevate|\bjourney\b|\btransform|self-care day|treat yourself|you deserve|look and feel your best|passionate about|game[- ]changer|take the guesswork out|ever wonder|did you know|are you tired of|here's the truth|what nobody tells you|\bimagine\b|picture this)/i;
@@ -301,6 +302,7 @@ function cleanCalendar(raw: any, p: Plan, pillars: { name: string }[]) {
     const goal = GOALS.includes(str(x?.goal).toLowerCase()) ? str(x?.goal).toLowerCase() : 'reach';
     return { day: i + 1, pillar: name, format, goal, hook: clean(x?.hook, 200), idea: clean(x?.idea, 300), cta: clean(x?.cta, 200) };
   });
+  for (const row of rows) if (row.goal === 'offer' && p.cta_type !== 'follow' && (!row.cta || /\b(follow|save|share|send it to)\b/i.test(row.cta))) row.cta = ctaLine(p);
   const want = Math.max(1, Math.round(rows.length / 5));
   let have = rows.filter((r) => r.goal === 'offer').length;
   for (let k = 0; k < want && have < want; k++) {
