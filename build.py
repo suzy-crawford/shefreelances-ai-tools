@@ -37,6 +37,17 @@ HEAD = {
 // task "rewrite": one piece of an ad. "more": the "make more versions" prompt. "form": the Instant Form.
 // "page": landing page copy plus the Base44 prompt to build it. "pagebuild": that prompt again after edits.
 """,
+    "contentAI": """import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
+
+// AI Content Creator, part 1: website fill, the content strategy and the posts, with their exact AI instructions and rules.
+// task "fill": facts from their website text. "strategy": positioning, 3 pillars, 21 hooks and the calendar.
+// "posts": up to 5 posts at once, one AI call each.
+""",
+    "contentExtra": """import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
+
+// AI Content Creator, part 2: redo one pillar, hook or day, and rewrite one piece, with their exact AI instructions and rules.
+// task "redo_pillar", "redo_hook", "redo_day", "rewrite".
+""",
     "analyzeLead": """import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
 
 // AI Client Finder: gathers facts for the AI Lead Analyzer without screenshots. Reads the business's
@@ -72,7 +83,9 @@ def prune(src):
         if not removed:
             return re.sub(r"\n{3,}", "\n\n", src)
 
-TASKS = {"adsAI": {"plan", "fill", "ads", "practice", "launch"}, "adsExtra": {"rewrite", "more", "form", "page", "pagebuild"}}
+TASKS = {"adsAI": {"plan", "fill", "ads", "practice", "launch"}, "adsExtra": {"rewrite", "more", "form", "page", "pagebuild"},
+         "contentAI": {"fill", "strategy", "posts"}, "contentExtra": {"redo_pillar", "redo_hook", "redo_day", "rewrite"}}
+SOURCE = {"adsExtra": "adsAI", "contentExtra": "contentAI"}
 def keep_tasks(body, keep):
     # Drop the task handlers this file doesn't serve (a handler is one line, or a block up to its closing "    }").
     lines = body.split("\n"); out = []; i = 0
@@ -88,22 +101,25 @@ def keep_tasks(body, keep):
     return "\n".join(out)
 
 for name, head in HEAD.items():
-    src = "adsAI" if name == "adsExtra" else name
+    src = SOURCE.get(name, name)
     body = (here / "src" / f"{src}.body.ts").read_text()
     if name in TASKS:
-        body = keep_tasks(body, TASKS[name]).replace("// ---- adsAI ----", f"// ---- {name} ----")
+        body = keep_tasks(body, TASKS[name]).replace("// ---- adsAI ----", f"// ---- {name} ----").replace("// ---- contentAI ----", f"// ---- {name} ----")
     out = "// deno-lint-ignore-file no-unused-vars\n" + head + "\n" + helpers + "\n" + body
-    if name in ("readWebsite", "adsAI", "adsExtra", "adsFunnel"):
+    if name in ("readWebsite", "adsAI", "adsExtra", "adsFunnel", "contentAI", "contentExtra"):
         out = prune(out).replace("// deno-lint-ignore-file no-unused-vars\n", "")
-        if name in ("adsAI", "adsExtra"):
+        if name in ("adsAI", "adsExtra", "contentAI", "contentExtra"):
             # Smaller to copy: drop comment-only lines after the header (the commented source stays in src/).
             head_end = out.index("\n\n", out.index("\n\n") + 2) + 2
             kept = [l for l in out[head_end:].split("\n") if not l.strip().startswith("//") or "deno-lint-ignore" in l]
             out = out[:head_end] + re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
     assert "—" not in out and "–" not in out
-    folder = "meta-ads" if name in ("readWebsite", "adsAI", "adsExtra", "adsFunnel") else "client-finder"
+    folder = "meta-ads" if name in ("readWebsite", "adsAI", "adsExtra", "adsFunnel") else "content-creator" if name.startswith("content") else "client-finder"
+    (here / folder).mkdir(exist_ok=True)
     (here / folder / f"{name}.ts").write_text(out)
     print(folder, name, len(out.splitlines()), "lines")
 import shutil
 (here / "meta-ads").mkdir(exist_ok=True)
 shutil.copyfile(here / "client-finder" / "generateWithAI.ts", here / "meta-ads" / "generateWithAI.ts")
+# The Content Creator reads websites with the same function as the Meta Ads Builder.
+shutil.copyfile(here / "meta-ads" / "readWebsite.ts", here / "content-creator" / "readWebsite.ts")
