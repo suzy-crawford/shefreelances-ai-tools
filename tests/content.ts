@@ -185,9 +185,9 @@ mock(ME, () => ({ text: 'Line one.\nLine two.' }));
 r = await call({ task: 'rewrite', plan: stratPlan, label: 'script', text: 'x' });
 check('rewrite: script keeps its line breaks', r.data.text === 'Line one.\nLine two.', r.data);
 
-mock(ME, () => ({ text: 'Shorter caption. Last line.' }));
+mock(ME, () => ({ text: 'Shorter caption here. Second line here. Third line here. Last line.' }));
 r = await call({ task: 'rewrite', plan: stratPlan, label: 'caption', text: 'Long caption here. #glow #facial #austin', style: 'shorter' });
-check('rewrite: caption keeps the original hashtags when the AI drops them', /\n\n#glow #facial #austin$/.test(r.data.text), r.data.text);
+check('rewrite: caption keeps the original hashtags when the AI drops them, still in paragraphs', /\n\n#glow #facial #austin$/.test(r.data.text) && r.data.text.split('\n\n').length >= 3, r.data.text);
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);

@@ -565,7 +565,7 @@ export default async function (req: Request) {
       const d = await write(rewritePrompt(p, label, text, how, str(body?.format), s(body?.hook, 200)), TEXT_SCHEMA, 55_000);
       // A rewritten caption keeps the original hashtags if the AI dropped them.
       const tags = label === 'caption' && !/#[\p{L}\p{N}_]/u.test(raw(d?.text)) ? (text.match(/#[\p{L}\p{N}_]+/gu) || []).join(' ') : '';
-      const out = label === 'caption' ? cleanCaption(tags ? `${raw(d?.text)}\n\n${tags}` : d?.text) : /script|visual|slides|text on screen/.test(label) ? keepLines(d?.text, 4000) : clean(d?.text, 1500);
+      const out = label === 'caption' ? cleanCaption(tags ? `${paragraphs(raw(d?.text))}\n\n${tags}` : d?.text) : /script|visual|slides|text on screen/.test(label) ? keepLines(d?.text, 4000) : clean(d?.text, 1500);
       if (!out) throw new Error("The AI didn't finish. Try again.");
       return Response.json({ text: out });
     }
