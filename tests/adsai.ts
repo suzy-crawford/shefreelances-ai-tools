@@ -408,6 +408,10 @@ check('photo: later parts lower-cased mid-sentence', /in a bright, simple treatm
 check('photo: acronyms and names keep their capitals', /in IV room near the door, Dr\. Lee checks it/.test(r.data.concepts[1].image_prompt), r.data.concepts[1].image_prompt.slice(0, 120));
 check('viewer rule: no worry or fear openers', /Worried it will look fake\?/.test(lastPrompt()) && /Don't open with what the viewer worries about/.test(lastPrompt()) && !/taking away a worry/.test(g.__mock.calls.map((c: any) => c.prompt).join()), null);
 
+mock(ME, () => ({ page_type: 'Lead generation', headline: 'H', subheadline: 'S', cta: 'C', offer: 'O', benefits: [], proof: [], process: [], faqs: [], form_fields: ['Name', 'Preferred Treatment (Facial or Wrinkle Relaxer)'] }));
+r = await call({ task: 'page', campaign: base, ad: concept(1) });
+check('page: long form field is not cut mid-word', r.data.landing_page.form_fields[1] === 'Preferred Treatment (Facial or Wrinkle Relaxer)', r.data.landing_page?.form_fields);
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
 Deno.exit(fails.length ? 1 : 0);

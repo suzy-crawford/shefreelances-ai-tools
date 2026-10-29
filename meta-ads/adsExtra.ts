@@ -498,7 +498,7 @@ export default async function (req: Request) {
         benefits: arr(d.benefits, 3, 300), proof: arr(d.proof, 6, 300), process: arr(d.process, 4, 300),
         // deno-lint-ignore no-explicit-any
         faqs: (Array.isArray(d.faqs) ? d.faqs : []).slice(0, 5).map((f: any) => ({ q: clean(f?.q, 200), a: clean(f?.a, 600) })).filter((f: { q: string }) => f.q),
-        form_fields: arr(d.form_fields, 6, 40).filter((x) => !SENSITIVE.test(x)),
+        form_fields: arr(d.form_fields, 6, 120).filter((x) => !SENSITIVE.test(x)),
       };
       return Response.json({ landing_page, build_prompt: pageBuildText(c, plan, body?.ad, landing_page) });
     }
