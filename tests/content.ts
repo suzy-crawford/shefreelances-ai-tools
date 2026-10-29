@@ -108,6 +108,7 @@ check('offer day: follow/save CTA replaced with the client CTA', r.data.strategy
 check('examples: labeled as other businesses, no nurse or facial example left', /from OTHER businesses and only show the style/.test(prompts().join()) && !/A nurse checks your skin/.test(prompts().join()) && !/Comment FACIAL/.test(prompts().join()), null);
 mock(ME, strategyLLM(7, (i) => (i === 3 ? { goal: 'offer', cta: 'Comment AFTERCARE and I will send the list' } : {})));
 r = await call({ task: 'strategy', plan: spa });
+check('rules: no invented client habits, staff actions or comparisons', /Never invent what their clients do, say, feel or ask/.test(prompts().join()) && /comparisons with other businesses/.test(prompts().join()), null);
 check('offer day: a real specific CTA is kept', r.data.strategy.calendar[3].cta === 'Comment AFTERCARE and I will send the list', r.data.strategy.calendar[3].cta);
 mock(ME, strategyLLM(7, (i) => (i === 3 ? { goal: 'offer', cta: 'Follow for more' } : {})));
 r = await call({ task: 'strategy', plan: { ...spa, cta_type: 'follow' } });
