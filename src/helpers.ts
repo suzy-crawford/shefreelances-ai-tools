@@ -31,6 +31,7 @@ const PLATFORMS = [
 ];
 function isPlatform(url: unknown) {
   const host = domainOf(url);
+  if (host === 'sites.google.com') return false; // a real website, built with Google Sites
   return !!host && PLATFORMS.some((d) => host === d || host.endsWith('.' + d));
 }
 
@@ -40,7 +41,7 @@ function nameKey(name: unknown) {
 
 // Words in a business name that identify it (not "the", "spa", "dental", or the city), to make sure a page is really theirs.
 const GENERIC = /^(the|and|for|med|medical|spa|spas|dental|dentist|dentistry|family|clinic|studio|salon|beauty|aesthetics|wellness|center|centre|group|company|services|service|llc|inc|corp|roofing|plumbing|construction|cosmetic|skin|care|health|fitness|home|homes|realty|law|firm|cafe|restaurant|bar|grill|shop|store|co|north|south|east|west|downtown)$/i;
-const plain = (s: unknown) => str(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const plain = (s: unknown) => str(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 function nameWords(name: unknown, location: unknown = '') {
   const place = new Set(plain(location).split(/[^a-z0-9]+/).filter(Boolean));
   return plain(name).replace(/&/g, ' ').split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !GENERIC.test(w) && !place.has(w));
@@ -48,14 +49,14 @@ function nameWords(name: unknown, location: unknown = '') {
 function pageIsTheirs(html: string, name: unknown, location: unknown = '', url = '') {
   const text = plain(decodeEntities(stripBlocks(html.slice(0, 400_000), ['script', 'style', 'noscript', 'svg', 'template', '!--']).replace(/<[^>]*>/g, ' ')));
   const words = nameWords(name, location);
-  if (words.length) return words.some((w) => text.includes(w));
+  if (words.length) return words.some((w) => new RegExp(`(^|[^a-z0-9])${w}([^a-z0-9]|$)`).test(text));
   // Only generic words (like "Spa 7" or "TOC Medical Spa"): the whole name must be in the page title or the domain.
   const whole = nameKey(plain(name));
   if (whole.length < 3) return false;
   return nameKey(plain(pageTitle(html))).includes(whole) || domainOf(url).replace(/[^a-z0-9]/g, '').includes(whole);
 }
 
-const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '-', mdash: '-', rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', hellip: '...' };
+const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '-', mdash: '-', rsquo: "'", lsquo: "'", rdquo: '"', ldquo: '"', hellip: '...', copy: '\u00a9', reg: '', trade: '' };
 function decodeEntities(s: string) {
   return s
     .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
@@ -221,6 +222,7 @@ function socialLinks(html: string) {
 // Parked or placeholder domains load fine but aren't a real business website.
 function looksParked(html: string) {
   if (html.length < 1500 && /location\.(href|replace)|http-equiv=["']refresh/i.test(html)) return true;
+  if (/parking-page|<title>\s*(coming soon|under construction|website coming soon|site (is )?under construction)\s*</i.test(html.slice(0, 20_000))) return true;
   return /(this domain (is|may be) for sale|buy this domain|domain parking|parked free|hugedomains|sedoparking|godaddy\.com\/domainsearch)/i.test(html.slice(0, 200_000));
 }
 
@@ -324,12 +326,12 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 // their own, and a redirect to another business's domain (expired domains often forward) isn't theirs.
 async function openTheirSite(url: string, name: unknown, location: unknown, ms = 8000) {
   const page = await fetchHtml(url, ms);
-  if (!page.ok) return { ...page, platformUrl: '' };
+  if (!page.ok) return { ...page, platformUrl: '', otherUrl: '' };
   if (domainOf(page.finalUrl) !== domainOf(url)) {
-    if (isPlatform(page.finalUrl)) return { ok: false, status: 'none', html: '', finalUrl: page.finalUrl, platformUrl: page.finalUrl };
-    if (!pageIsTheirs(page.html, name, location, page.finalUrl)) return { ok: false, status: 'down', html: '', finalUrl: page.finalUrl, platformUrl: '' };
+    if (isPlatform(page.finalUrl)) return { ok: false, status: 'none', html: '', finalUrl: page.finalUrl, platformUrl: page.finalUrl, otherUrl: '' };
+    if (!pageIsTheirs(page.html, name, location, page.finalUrl)) return { ok: false, status: 'down', html: '', finalUrl: page.finalUrl, platformUrl: '', otherUrl: page.finalUrl };
   }
-  return { ...page, platformUrl: '' };
+  return { ...page, platformUrl: '', otherUrl: '' };
 }
 
 // One clock for the whole request, so every step fits inside the time the platform allows.

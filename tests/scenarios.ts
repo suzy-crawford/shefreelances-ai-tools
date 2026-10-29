@@ -65,6 +65,8 @@ const SITES: Record<string, { status?: number; html?: string; hang?: boolean; th
   'https://sentryroofing.com/': { html: pad('<title>Sentry Roofing</title> info@sentryroofing.com') },
   'https://pielaesthetics.net/': { html: pad('<title>Piel</title> pielowner@gmail.com and info@pielaesthetics.co') },
   'https://bellaspa.com/': { html: pad('<title>Bella Spa</title> info@bellaspa.com') },
+  'https://boisedentalarts.com/': { redirectTo: 'https://www.boisedentist.com/' },
+  'https://www.boisedentist.com/': { html: pad('<title>Boise Family Dental Care</title> Your smile starts here. info@boisedentist.com') },
   'https://inbox.com/': { html: pad('Owner: jane.doe@inbox.com, general questions info@inbox.com, partner pr@agency.io') },
   'https://freemail.com/': { html: pad('Website by contact@webstudio.design. Email the shop: sweetshop@gmail.com') },
   'https://directory.com/listing/44': { html: pad('<script>var e="hidden@somewhere.net"</script> nothing visible') },
@@ -390,6 +392,10 @@ check('FE: site moved to their own new domain -> new_website reported', r.data.n
 mock(ME, () => ({ email: '', email_source_url: '', website: 'https://www.otherplumbing.com', instagram: '', facebook: '' }));
 r = await call(findEmail, { website: 'https://down.com', name: 'Glo Med Spa Austin', location: 'Austin, TX' });
 check('FE: name with only a city word doesn\'t match another business', r.data.new_website === '', r.data);
+
+mock(ME, () => ({ email: '', email_source_url: '', website: '', instagram: '', facebook: '' }));
+r = await call(findEmail, { website: 'https://boisedentalarts.com', name: 'Boise Dental Arts', location: 'Boise, ID' });
+check('FE: "arts" inside "starts" does not make another practice theirs', r.data.email === '' && r.data.website_works === false, r.data);
 
 mock(ME, () => 'this is not json');
 r = await call(findEmail, { name: 'Weird', location: 'Austin' });

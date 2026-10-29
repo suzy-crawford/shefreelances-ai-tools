@@ -18,6 +18,13 @@ HEAD = {
 // that is double-checked against the source page. Never guesses an email.
 // Also finds the right website when the one on file doesn't work.
 """,
+    "analyzeLead": """import { createClientFromRequest } from 'npm:@base44/sdk@0.8.52';
+
+// AI Client Finder: gathers facts for the AI Lead Analyzer without screenshots. Reads the business's
+// own website for things it can confirm (Meta Pixel, Google tag, online booking, a clear Book button,
+// phone-ready, contact form, prices, reviews, footer year, https, social links), and runs one web
+// search for their Google rating and whether they run Meta ads, which the app labels "double-check".
+""",
 }
 for name, head in HEAD.items():
     body = (here / "src" / f"{name}.body.ts").read_text()
