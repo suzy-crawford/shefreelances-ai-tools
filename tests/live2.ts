@@ -1,10 +1,10 @@
 import findBusinesses from '../client-finder/findBusinesses.ts';
 const g = globalThis as any;
 const urls = Deno.args;
-const biz = (u: string, i: number) => ({ name: 'Biz ' + i, website: u, phone: '', address: '', instagram: '', facebook: '', source_url: '', is_chain: false });
+const biz = (a: string, i: number) => ({ name: a.split('|')[1] || 'Biz ' + i, website: a.split('|')[0], phone: '', address: '', instagram: '', facebook: '', source_url: '', is_chain: false });
 g.__mock = { user: { id: 'u' }, calls: [], llm: (_a: any, n: number) => n === 1 ? { businesses: urls.map(biz) } : { businesses: [] } };
 const t0 = Date.now();
 const res = await findBusinesses(new Request('https://x/', { method: 'POST', body: JSON.stringify({ businessType: 'x', location: 'y' }) }));
 const d = await res.json();
 console.log('status', res.status, 'took', Date.now() - t0, 'ms', 'count', d.businesses?.length);
-for (const b of d.businesses) console.log([b.website.replace('https://',''), b.website_checked ? 'OK' : 'NOT LOADED', b.is_chain ? 'CHAIN' : '', 'title=' + b.page_title.slice(0, 45), 'email=' + b.email, b.email_source ? 'from=' + b.email_source.replace(/https?:\/\/[^/]+/, '') : '', 'ig=' + b.instagram.replace('https://www.instagram.com/', ''), 'fb=' + b.facebook.replace('https://www.facebook.com/', ''), 'text=' + b.site_text.length].join(' | '));
+for (const b of d.businesses) console.log([b.website.replace('https://',''), b.website_status, b.is_chain ? 'CHAIN' : '', 'title=' + b.page_title.slice(0, 45), 'email=' + b.email, b.email_source ? 'from=' + b.email_source.replace(/https?:\/\/[^/]+/, '') : '', 'ig=' + b.instagram.replace('https://www.instagram.com/', ''), 'fb=' + b.facebook.replace('https://www.facebook.com/', ''), 'text=' + b.site_text.length].join(' | '));

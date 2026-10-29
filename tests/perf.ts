@@ -1,0 +1,16 @@
+import findBusinesses from '../client-finder/findBusinesses.ts';
+const g = globalThis as any;
+const kind = Deno.args[0];
+const normal = '<html><head><title>T</title></head><body>' + '<div class="c"><a href="/p">Link</a><p>Some text here about services info</p></div>'.repeat(15000) + '</body></html>';
+const unclosedA = '<title>T</title>' + '<a href="/x">x '.repeat(1500000/16);
+const unclosedScript = '<title>T</title>' + '<script>var a=1;'.repeat(1500000/16);
+const emailish = '<title>T</title>' + 'a'.repeat(1400000) + '@' + 'b.'.repeat(50000);
+const html = ({ normal, unclosedA, unclosedScript, emailish } as any)[kind];
+console.log(kind, 'len', html.length);
+g.fetch = (input: string) => { const r = new Response(html, { status: 200 }); Object.defineProperty(r, 'url', { value: String(input) }); return Promise.resolve(r); };
+const n = Number(Deno.args[1] || 1);
+g.__mock = { user: { id: 'u' }, calls: [], llm: (_a: any, c: number) => c === 1 ? { businesses: Array.from({ length: n }, (_, i) => ({ name: 'B' + i, website: `b${i}.com`, phone: '', address: '', instagram: '', facebook: '', source_url: '', is_chain: false })) } : { businesses: [] } };
+const t0 = performance.now();
+const res = await findBusinesses(new Request('https://x/', { method: 'POST', body: JSON.stringify({ businessType: 's', location: 'A' }) }));
+await res.json();
+console.log('took', Math.round(performance.now() - t0), 'ms for', n, 'sites');

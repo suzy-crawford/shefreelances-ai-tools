@@ -14,7 +14,7 @@ function check(name: string, ok: unknown, detail?: unknown) {
 
 // ---------- fake websites ----------
 const pad = (s: string) => s + '<p>' + 'Welcome to our studio. '.repeat(80) + '</p>';
-const SITES: Record<string, { status?: number; html?: string; hang?: boolean; throws?: boolean; redirectTo?: string }> = {
+const SITES: Record<string, { status?: number; html?: string; hang?: boolean; throws?: boolean; redirectTo?: string; type?: string; bytes?: Uint8Array }> = {
   'https://good.com/': { html: pad('<title>Good Spa | Austin</title><script>var x="secret@script.com"</script><a href="https://www.instagram.com/goodspa/">IG</a><a href="https://www.instagram.com/p/abc123/">post</a><a href="https://www.facebook.com/sharer.php?u=x">share</a><a href="https://facebook.com/goodspaatx">FB</a><a href="mailto:Info@Good.com">Email us</a>') },
   'https://contactonly.com/': { html: pad('<title>Contact Only</title><a href="/contact-us">Get in touch</a><a href="/about">About</a>') },
   'https://contactonly.com/contact-us': { html: pad('<a href="mailto:hello@contactonly.com?subject=Hi">hello</a>') },
@@ -29,19 +29,50 @@ const SITES: Record<string, { status?: number; html?: string; hang?: boolean; th
   'https://junk.com/': { html: pad('sentry@abc.ingest.sentry.io logo@2x.png user@example.com you@email.com 12@3.com') },
   'https://mixed.com/': { html: pad('owner.personal@gmail.com and also info@mixed.com') },
   'https://redirects.com/': { redirectTo: 'https://www.redirected-final.com/' },
-  'https://www.redirected-final.com/': { html: pad('<title>Final</title> contact: front@redirected-final.com') },
-  'https://newsite.com/': { html: pad('<title>New</title><a href="https://instagram.com/newsite_ig">ig</a> email booking@newsite.com') },
-  'https://directory.com/listing/42': { html: pad('Listed email: owner@somewhere.net phone 555') },
+  'https://www.redirected-final.com/': { html: pad('<title>Redirects Co</title> contact: front@redirected-final.com') },
+  'https://newsite.com/': { html: pad('<title>Moved Spa</title><a href="https://instagram.com/newsite_ig">ig</a> email booking@newsite.com') },
+  'https://directory.com/listing/42': { html: pad('No Site Spa in Austin. Listed email: owner@somewhere.net phone 555') },
   'https://directory.com/listing/43': { html: pad('No email here') },
   'https://socialonly.com/': { html: pad('<title>Social only</title> info@socialonly.com') },
   'https://pixel.com/': { html: pad('<title>Amy&#039;s &amp; Co &ndash; Ice Cream</title><script>fbq("init","1",{"em":"graham@designer-agency.com"})</script><!-- dev@old.com --> Call us!') },
   'https://schema.com/': { html: pad('<script type="application/ld+json">{"@type":"LocalBusiness","email":"hello@schema.com"}</script><script>var dev="dev@agency.io"</script>') },
   'https://devmail.com/': { html: pad('Site by dev@antrimcreek.com and support@wellthy-other.com. <a href="https://www.facebook.com/p/Dev-Mail-Spa-100088817231261/">fb</a>') },
   'https://glowspa.com/': { html: pad('Email info@glowspaaustin.com or webmaster@glowspa.com') },
+  'https://austinmedspa.com/': { html: pad('<title>Austin Med Spa</title> Website by hello@austinwebdesign.com') },
+  'https://smithdental.com/': { html: pad('<title>Smith Dental</title> Marketing by info@dentalmarketingpros.com') },
+  'https://offsite.com/': { html: pad('<title>Offsite Spa</title><a href="https://www.vagaro.com/contact">Contact us</a><a href="https://policies.google.com/privacy">Privacy</a>') },
+  'https://www.vagaro.com/contact': { html: pad('Questions? jenny.spa@gmail.com') },
+  'https://policies.google.com/privacy': { html: pad('privacy@google.com') },
+  'https://blocked.com/': { status: 403 },
+  'https://ratelimited.com/': { status: 429 },
+  'https://pdfsite.com/': { html: '%PDF-1.4 binary garbage info@pdfsite.com', type: 'application/pdf' },
+  'https://latin.com/': { bytes: new Uint8Array([...new TextEncoder().encode('<html><head><meta charset="windows-1252"><title>Caf'), 0xe9, ...new TextEncoder().encode(' Ol'), 0xe9, ...new TextEncoder().encode('</title></head><body>' + 'Welcome to our studio. '.repeat(80) + ' hola@latin.com</body></html>')]), type: 'text/html' },
+  'https://glued.com/': { html: pad('Write to glowspa@gmail.com.We reply fast') },
+  'https://cfmail.com/': { html: pad('<a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="' + cfEncode('hello@cfmail.com') + '">[email&#160;protected]</a>') },
+  'https://dashes.com/': { html: pad('<title>Dash &#8211; Spa &#8212; Austin</title>') },
+  'https://huge.com/': { html: pad('a'.repeat(400000) + ' real@huge.com x' + '<script'.repeat(20000)) },
+  'https://otherbiz.com/': { html: pad('<title>Totally Different Bakery</title> cakes@otherbiz.com') },
+  'https://directory.com/listing/45': { html: pad('Some Other Business. Listed email: wrong@somewhere.net') },
+  'https://longlink.com/': { html: pad('<title>Long Link</title><a href="./privacy-notice"><span style="' + 'x'.repeat(1500) + '">Privacy</span></a>') },
+  'https://longlink.com/privacy-notice': { html: pad('Email: owner@longlink.com') },
+  'https://oldspa.com/': { redirectTo: 'https://www.otherplumbing.com/' },
+  'https://www.otherplumbing.com/': { html: pad('<title>Other Plumbing Co</title> info@otherplumbing.com') },
+  'https://rebrand.com/': { redirectTo: 'https://www.rebrandglow.com/' },
+  'https://www.rebrandglow.com/': { html: pad('<title>Rebrand Beauty Bar</title> hello@rebrandglow.com') },
+  'https://tolinktree.com/': { redirectTo: 'https://linktr.ee/glowbeauty' },
+  'https://linktr.ee/glowbeauty': { html: pad('<title>glowbeauty | Linktree</title> press@linktr.ee') },
+  'https://challenge.com/': { html: '<html><head><title>Just a moment...</title></head><body>' + 'x'.repeat(3000) + '</body></html>' },
+  'https://sentryroofing.com/': { html: pad('<title>Sentry Roofing</title> info@sentryroofing.com') },
+  'https://pielaesthetics.net/': { html: pad('<title>Piel</title> pielowner@gmail.com and info@pielaesthetics.co') },
+  'https://bellaspa.com/': { html: pad('<title>Bella Spa</title> info@bellaspa.com') },
   'https://inbox.com/': { html: pad('Owner: jane.doe@inbox.com, general questions info@inbox.com, partner pr@agency.io') },
   'https://freemail.com/': { html: pad('Website by contact@webstudio.design. Email the shop: sweetshop@gmail.com') },
   'https://directory.com/listing/44': { html: pad('<script>var e="hidden@somewhere.net"</script> nothing visible') },
 };
+function cfEncode(email: string) {
+  const key = 0x42;
+  return key.toString(16).padStart(2, '0') + [...email].map((c) => (c.charCodeAt(0) ^ key).toString(16).padStart(2, '0')).join('');
+}
 const fetched: string[] = [];
 g.fetch = (input: string, init: any = {}) => {
   const url = String(input);
@@ -57,11 +88,11 @@ g.fetch = (input: string, init: any = {}) => {
     if (site.hang) return; // only the timeout ends this
     if (site.redirectTo) {
       const final = SITES[site.redirectTo];
-      const r = new Response(final.html, { status: 200 });
+      const r = new Response(final.html, { status: 200, headers: { 'content-type': 'text/html' } });
       Object.defineProperty(r, 'url', { value: site.redirectTo });
       return resolve(r);
     }
-    const r = new Response(site.html ?? '', { status: site.status ?? 200 });
+    const r = new Response(site.bytes ?? site.html ?? '', { status: site.status ?? 200, headers: { 'content-type': site.type ?? 'text/html; charset=utf-8' } });
     Object.defineProperty(r, 'url', { value: url });
     resolve(r);
   });
@@ -167,6 +198,7 @@ const t0 = Date.now();
 r = await call(findBusinesses, { businessType: 'med spa', location: 'Austin, TX', exclude });
 const took = Date.now() - t0;
 const list = r.data.businesses || [];
+
 const byName = (n: string) => list.find((b: any) => b.name === n);
 check('FB: 200 even when 1 of 3 searches returns broken JSON', r.status === 200, r.data);
 check('FB: failed_searches = 1', r.data.failed_searches === 1, r.data.failed_searches);
@@ -206,7 +238,7 @@ const nows = byName('No Website & Co');
 check('FB: no website -> unchecked, dedupe_key = name key, reel link dropped', nows?.website_checked === false && nows?.dedupe_key === 'nowebsiteandco' && nows?.instagram === '', nows);
 check('FB: "not a url" website blanked', byName('Spaces Site')?.website === '', byName('Spaces Site'));
 check('FB: every result has every field as the right type', list.every((b: any) =>
-  ['name', 'website', 'phone', 'address', 'instagram', 'facebook', 'source_url', 'dedupe_key', 'page_title', 'site_text', 'email', 'email_source'].every((k) => typeof b[k] === 'string') &&
+  ['name', 'website', 'phone', 'address', 'instagram', 'facebook', 'source_url', 'dedupe_key', 'page_title', 'site_text', 'email', 'email_source', 'website_status'].every((k) => typeof b[k] === 'string') &&
   ['is_chain', 'website_checked'].every((k) => typeof b[k] === 'boolean')), list.find((b: any) => !(typeof b.site_text === 'string')));
 check('FB: phone number coerced to text', byName('42')?.phone === '5551234', byName('42'));
 const firstChain = list.findIndex((b: any) => b.is_chain);
@@ -224,6 +256,64 @@ check('FB: email from schema.org business data kept, script email ignored', byNa
 check('FB: developer / other-company emails dropped', byName('Dev Mail')?.email === '', byName('Dev Mail')?.email);
 check('FB: new facebook.com/p/ page link kept', byName('Dev Mail')?.facebook === 'https://www.facebook.com/p/Dev-Mail-Spa-100088817231261/', byName('Dev Mail')?.facebook);
 check('FB: related business domain kept, webmaster@ dropped', byName('Glow Spa Austin')?.email === 'info@glowspaaustin.com', byName('Glow Spa Austin')?.email);
+const NEW = [
+    biz({ name: 'Austin Med Spa', website: 'https://austinmedspa.com' }),
+    biz({ name: 'Smith Dental', website: 'https://smithdental.com' }),
+    biz({ name: 'Offsite Spa', website: 'https://offsite.com' }),
+    biz({ name: 'Blocked Spa', website: 'https://blocked.com' }),
+    biz({ name: 'Rate Limited', website: 'https://ratelimited.com' }),
+    biz({ name: 'PDF Site', website: 'https://pdfsite.com' }),
+    biz({ name: 'Latin Cafe', website: 'https://latin.com' }),
+    biz({ name: 'Glued Email', website: 'https://glued.com' }),
+    biz({ name: 'CF Mail', website: 'https://cfmail.com' }),
+    biz({ name: 'Dashes', website: 'https://dashes.com' }),
+    biz({ name: 'Long Link', website: 'https://longlink.com' }),
+    biz({ name: 'Old Spa Austin', website: 'https://oldspa.com' }),
+    biz({ name: 'Rebrand Beauty Bar', website: 'https://rebrand.com' }),
+    biz({ name: 'Glow Beauty', website: 'https://tolinktree.com' }),
+    biz({ name: 'Challenge Spa', website: 'https://challenge.com' }),
+    biz({ name: 'Sentry Roofing', website: 'https://sentryroofing.com' }),
+    biz({ name: 'Piel Aesthetics', website: 'https://pielaesthetics.net' }),
+    biz({ name: 'Huge Page', website: 'https://huge.com' }),
+    biz({ name: 'IG Only One', website: 'https://www.instagram.com/glowskinatx/' }),
+    biz({ name: 'IG Only Two', website: 'https://www.instagram.com/skinbyjess/' }),
+    biz({ name: 'Linktree One', website: 'https://linktr.ee/glowskin' }),
+    biz({ name: 'Vagaro One', website: 'https://www.vagaro.com/glowskin' }),
+    biz({ name: { bad: 1 }, website: 'https://objname.com' }),
+    biz({ name: 'Object Phone', phone: { a: 1 }, address: ['x'] }),
+];
+mock(ME, (args, n) => (n === 1 ? { businesses: NEW } : { businesses: [] }));
+const t1 = Date.now();
+const r2 = await call(findBusinesses, { businessType: 'med spa', location: 'Austin, TX' });
+const took2 = Date.now() - t1;
+list.push(...(r2.data.businesses || []));
+check('FB: second batch (platforms, odd pages) under 15s', took2 < 15000, took2);
+check('FB: privacy link with long styled text still followed', byName('Long Link')?.email === 'owner@longlink.com', byName('Long Link')?.email);
+check('FB: domain forwarding to another business -> not theirs, no email', byName('Old Spa Austin')?.website_status === 'down' && byName('Old Spa Austin')?.email === '' && byName('Old Spa Austin')?.website === 'https://oldspa.com', byName('Old Spa Austin'));
+check('FB: domain forwarding to their own new site -> kept, website updated', byName('Rebrand Beauty Bar')?.website === 'https://www.rebrandglow.com' && byName('Rebrand Beauty Bar')?.email === 'hello@rebrandglow.com', byName('Rebrand Beauty Bar'));
+check('FB: domain forwarding to Linktree -> no website, no Linktree text/email', byName('Glow Beauty')?.website === '' && byName('Glow Beauty')?.website_status === 'none' && byName('Glow Beauty')?.site_text === '' && byName('Glow Beauty')?.email === '', byName('Glow Beauty'));
+check('FB: Cloudflare "Just a moment" page -> blocked', byName('Challenge Spa')?.website_status === 'blocked', byName('Challenge Spa')?.website_status);
+check('FB: real business with "sentry" in its name keeps its email', byName('Sentry Roofing')?.email === 'info@sentryroofing.com', byName('Sentry Roofing')?.email);
+check('FB: sibling-domain info@ preferred over gmail', byName('Piel Aesthetics')?.email === 'info@pielaesthetics.co', byName('Piel Aesthetics')?.email);
+check('FB: agency domain sharing a city/niche word is NOT used', byName('Austin Med Spa')?.email === '' && byName('Smith Dental')?.email === '', [byName('Austin Med Spa')?.email, byName('Smith Dental')?.email]);
+check('FB: contact/privacy links on other sites are not crawled', byName('Offsite Spa')?.email === '' && !fetched.some((u) => u.includes('vagaro.com/contact') || u.includes('policies.google.com')), byName('Offsite Spa')?.email);
+check('FB: 403 site -> status "blocked" (not "down")', byName('Blocked Spa')?.website_status === 'blocked' && byName('Blocked Spa')?.website_checked === false, byName('Blocked Spa'));
+check('FB: 429 site -> status "blocked"', byName('Rate Limited')?.website_status === 'blocked', byName('Rate Limited')?.website_status);
+check('FB: 500 site -> status "down"', byName('Down Spa')?.website_status === 'down', byName('Down Spa')?.website_status);
+check('FB: no website -> status "none"', byName('No Website & Co')?.website_status === 'none', byName('No Website & Co')?.website_status);
+check('FB: working site -> status "ok"', good?.website_status === 'ok', good?.website_status);
+check('FB: PDF link is not a working website', byName('PDF Site')?.website_checked === false && byName('PDF Site')?.site_text === '', byName('PDF Site'));
+check('FB: windows-1252 page decoded (Caf\u00e9 Ol\u00e9)', byName('Latin Cafe')?.page_title === 'Caf\u00e9 Ol\u00e9' && byName('Latin Cafe')?.email === 'hola@latin.com', byName('Latin Cafe'));
+check('FB: email stuck to next word is cleaned', byName('Glued Email')?.email === 'glowspa@gmail.com', byName('Glued Email')?.email);
+check('FB: Cloudflare-hidden email decoded', byName('CF Mail')?.email === 'hello@cfmail.com', byName('CF Mail')?.email);
+check('FB: numeric-code dashes in title become hyphens', byName('Dashes')?.page_title === 'Dash - Spa - Austin', byName('Dashes')?.page_title);
+check('FB: huge broken page handled, email found', byName('Huge Page')?.email === 'real@huge.com', byName('Huge Page')?.email);
+const igOne = byName('IG Only One'), igTwo = byName('IG Only Two');
+check('FB: Instagram-as-website: both businesses kept (not deduped by instagram.com)', !!igOne && !!igTwo, list.map((b: any) => b.name));
+check('FB: Instagram-as-website: website blank, handle moved to instagram', igOne?.website === '' && igOne?.instagram === 'https://www.instagram.com/glowskinatx/' && igOne?.website_status === 'none', igOne);
+check('FB: Linktree/Vagaro links not used as website or for email', byName('Linktree One')?.website === '' && byName('Vagaro One')?.website === '' && !list.some((b: any) => /linktr\.ee|vagaro\.com|booksy/.test(b.email)), [byName('Linktree One'), byName('Vagaro One')]);
+check('FB: object name skipped, object phone/address blank', !list.some((b: any) => b.name.includes('object')) && byName('Object Phone')?.phone === '' && byName('Object Phone')?.address === '', byName('Object Phone'));
+check('FB: redirected site -> website updated to the address that works', red?.website === 'https://www.redirected-final.com', red?.website);
 // Cap at 35 results.
 mock(ME, (args, n) => ({ businesses: Array.from({ length: 30 }, (_, i) => biz({ name: `Biz ${n}-${i}` })) }));
 r = await call(findBusinesses, { businessType: 'roofers', location: 'Dallas' });
@@ -268,6 +358,38 @@ check('FE: junk email from search dropped', r.data.email === '' && r.data.email_
 mock(ME, () => ({ email: 'webmaster@somewhere.net', email_source_url: 'https://directory.com/listing/42', website: '', instagram: '', facebook: '' }));
 r = await call(findEmail, { name: 'Dev', location: 'Austin' });
 check('FE: webmaster@ from search dropped', r.data.email === '', r.data);
+
+mock(ME, () => ({ email: '', email_source_url: '', website: 'https://otherbiz.com', instagram: '', facebook: '' }));
+r = await call(findEmail, { website: 'https://down.com', name: 'Moved Spa', location: 'Austin' });
+check('FE: search suggests a different business site -> not used', r.data.new_website === '' && r.data.email === '', r.data);
+
+mock(ME, () => ({ email: 'support@vagaro.com', email_source_url: '', website: 'https://www.instagram.com/movedspa/', instagram: '', facebook: '' }));
+r = await call(findEmail, { website: 'https://down.com', name: 'Moved Spa', location: 'Austin' });
+check('FE: platform website / platform email from search rejected', r.data.new_website === '' && r.data.email === '' && r.data.instagram === '', r.data);
+
+mock(ME, () => ({ email: 'wrong@somewhere.net', email_source_url: 'https://directory.com/listing/45', website: '', instagram: '', facebook: '' }));
+r = await call(findEmail, { name: 'No Site Spa', location: 'Austin' });
+check('FE: source page is about another business -> NOT verified', r.data.email_verified === false, r.data);
+
+mock(ME, () => { throw new Error('should not search'); });
+r = await call(findEmail, { website: 'https://www.instagram.com/someig/', name: '', location: '' });
+check('FE: Instagram link on file treated as Instagram, not website', r.data.instagram === 'https://www.instagram.com/someig/' && r.data.website_works === false, r.data);
+
+mock(ME, () => { throw new Error('InvokeLLM rate limited'); });
+r = await call(findEmail, { website: 'https://bellaspa.com', name: 'Bella Spa', location: 'Austin', needSocial: true });
+check('FE: web search fails -> site email still returned (no 500)', r.status === 200 && r.data.email === 'info@bellaspa.com' && r.data.email_verified === true, r);
+
+mock(ME, () => ({ email: '', email_source_url: '', website: '', instagram: '', facebook: '' }));
+r = await call(findEmail, { website: 'https://oldspa.com', name: 'Old Spa Austin', location: 'Austin, TX' });
+check('FE: site forwarding to another business -> not used, its email not returned', r.data.email === '' && r.data.website_works === false, r.data);
+
+mock(ME, () => { throw new Error('should not search'); });
+r = await call(findEmail, { website: 'https://rebrand.com', name: 'Rebrand Beauty Bar', location: 'Austin' });
+check('FE: site moved to their own new domain -> new_website reported', r.data.new_website === 'https://www.rebrandglow.com' && r.data.email === 'hello@rebrandglow.com', r.data);
+
+mock(ME, () => ({ email: '', email_source_url: '', website: 'https://www.otherplumbing.com', instagram: '', facebook: '' }));
+r = await call(findEmail, { website: 'https://down.com', name: 'Glo Med Spa Austin', location: 'Austin, TX' });
+check('FE: name with only a city word doesn\'t match another business', r.data.new_website === '', r.data);
 
 mock(ME, () => 'this is not json');
 r = await call(findEmail, { name: 'Weird', location: 'Austin' });
