@@ -269,10 +269,11 @@ function nicheHints(c: Campaign) {
 }
 
 // Each of the 3 ads is written in its own call, at the same time, each from a different direction.
+// Each direction names what the other two cover, so the 3 ads never land on the same angle.
 const AD_PLANS = [
-  ['an everyday problem or frustration this business solves', 'Problem, Agitate, Solve'],
-  ['a moment, occasion or season coming up that makes now the time', 'Before, After, Bridge'],
-  ['what the first visit or first order is actually like, answering a question people ask (describe the visit, never the viewer\'s feelings)', 'a short "Say you..." scenario'],
+  ['an everyday problem or frustration this business solves. Not a date, event, holiday or season (ad 2 covers timing) and not what a first visit is like (ad 3 covers that)', 'Problem, Agitate, Solve'],
+  ['a moment, occasion or season coming up that makes now the time (an event, a holiday, a time of year, a deadline in their life). Not a general problem (ad 1) and not what a first visit is like (ad 3)', 'Before, After, Bridge'],
+  ['what the first visit or first order is actually like, answering a question people ask (describe the visit, never the viewer\'s feelings). No dates, events, holidays or seasons (ad 2 covers timing)', 'a short "Say you..." scenario'],
 ];
 
 function adsPrompt(c: Campaign, plan: Plan, n = 0) {

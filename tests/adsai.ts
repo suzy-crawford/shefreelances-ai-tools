@@ -412,6 +412,11 @@ mock(ME, () => ({ page_type: 'Lead generation', headline: 'H', subheadline: 'S',
 r = await call({ task: 'page', campaign: base, ad: concept(1) });
 check('page: long form field is not cut mid-word', r.data.landing_page.form_fields[1] === 'Preferred Treatment (Facial or Wrinkle Relaxer)', r.data.landing_page?.form_fields);
 
+mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: base });
+const lanes = g.__mock.calls.map((x: any) => x.prompt);
+check('lanes: ad 1 and 3 are told to stay off dates and holidays, ad 2 owns timing', lanes.filter((p: string) => /Not a date, event, holiday or season|No dates, events, holidays or seasons/.test(p)).length === 2 && lanes.some((p: string) => /It is ad 2 of 3/.test(p) && /a holiday, a time of year/.test(p)), null);
+
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
 Deno.exit(fails.length ? 1 : 0);
