@@ -144,7 +144,7 @@ function makePlan(c: Campaign) {
       'No promises about how someone will look ("Look 10 years younger").',
       'Lead with the offer and the experience, with confident, warm language.',
       'Only quote reviews about the staff or the experience, never reviews that describe results.',
-      'Use real photos of the space and the team where possible. Never describe a person for an AI to generate.',
+      'Use real photos of the space and the team where possible. AI images can show people during a visit, never as a result or as a real client.',
     );
     if (WEIGHT_LOSS.test(text)) rules.push('For weight loss: no body, scale, tape measure or before and after imagery, and no pounds or sizes.');
   }
@@ -225,18 +225,36 @@ function emojiRule(c: Campaign) {
 }
 
 // Added to every image or video prompt by code.
-function imageRules(plan: Plan, c: Campaign, video = false) {
-  const parts = [
-    video
-      ? 'This is the first frame of a vertical video: no text, logos or buttons on it. Photorealistic.'
-      : 'If I uploaded a logo or website screenshot, use it for the brand style. Keep text readable on mobile. Create this as one finished 4:5 ad image, ready to upload to Meta, with all the text spelled exactly as written. No button shapes.',
-    'Do not invent ratings, results, prices, urgency, guarantees, badges, award ribbons or credentials.',
-    c.assets_text
-      ? 'If you use my real photos, keep the people in them exactly as they are. Never add, change or generate a person.'
-      : 'Show no people, faces or bodies: show the room, the equipment, the product, the food, the finished work or hands at work. Replace with a real photo of the business if you have one.',
-  ];
-  if (plan.health) parts.push('No before and after images, no bodies, scales or close-ups of skin, teeth or problem areas, and no one presented as a real client or patient.');
+// Added to every photo, design and video prompt by code.
+function imageRules(plan: Plan, c: Campaign) {
+  const parts = ['No logos, watermarks or signs with words. Do not invent ratings, results, prices, badges, award ribbons or credentials.'];
+  if (c.assets_text) parts.push('If I attached my real photos, build from them and keep any people in them exactly as they are.');
+  if (plan.health) {
+    parts.push('People are fine during the visit (relaxing in a treatment chair, talking with a provider), natural and realistic, but no close-ups of skin, faces, teeth or bodies, nothing that looks like a result, no before and after, and no one presented as a real client or patient.');
+    if (WEIGHT_LOSS.test([c.business_description, c.product, c.services.join(' '), c.offer_text].join(' '))) parts.push('No bodies, scales, tape measures or clothing sizes.');
+  } else {
+    parts.push('Any people should look like real local customers or staff in a natural moment, not posed stock models. No before and after unless it is built from my own real photos.');
+  }
   return parts.join(' ');
+}
+
+// The 3 copy-ready image prompts, built by code from the AI's photo idea.
+// deno-lint-ignore no-explicit-any
+function imagePrompts(x: any, c: Campaign, plan: Plan, overlay: string, video: boolean) {
+  // deno-lint-ignore no-explicit-any
+  const p: any = x?.photo && typeof x.photo === 'object' ? x.photo : {};
+  const pos = /top/i.test(str(p.text_space)) ? 'top' : 'bottom';
+  const bits = [clean(p.subject, 200) + (clean(p.setting, 200) ? ` in ${clean(p.setting, 200)}` : ''), clean(p.action, 200), clean(p.mood, 120), clean(p.lighting, 120), clean(p.angle, 120)].filter(Boolean);
+  const scene = bits.length > 1 ? bits.join(', ') : clean(x?.creative_direction, 300) || clean(x?.image_prompt, 600);
+  const details = clean(p.details, 400);
+  const rules = imageRules(plan, c);
+  const photo = video
+    ? `${scene}, photorealistic, vertical 9:16, like a real phone photo. ${details} This is the first frame of a video: no text anywhere. ${rules}`
+    : `${scene}, photorealistic, vertical 4:5 format for a Facebook and Instagram feed ad, like a real phone photo taken locally, not stock. ${details} Leave clean empty space in the ${pos} third for a text overlay. No text, words or letters anywhere in the image. ${rules}`;
+  const design = `Design a 4:5 Facebook and Instagram feed ad for ${c.business_name || '[business name]'}${c.location ? ` in ${c.location}` : ''}. Background: a realistic photo of ${scene}. ${details} Text on the ad, spelled exactly: "${overlay}". Make it big and easy to read on a phone, in the ${pos} third, with a simple clean layout. Brand colors: ${c.brand_colors || 'pick one that fits the business'}.${c.brand_style ? ` Style: ${c.brand_style}.` : ''} No other text, no buttons, no logo (I'll add anything else in Canva). ${rules}`;
+  const broll = `An 8-second vertical 9:16 video clip, photorealistic, like it was filmed on a phone at the business: ${scene}. ${clean(x?.motion, 400) || clean(x?.motion_prompt, 400) || 'Slow, steady push in.'} ${details} No text, captions or logos. ${rules}`;
+  const tidy = (v: string) => v.replace(/\s{2,}/g, ' ').replace(/ \./g, '.').trim();
+  return { photo: tidy(photo), design: tidy(design), broll: tidy(broll) };
 }
 
 // ---------- AI prompts ----------
@@ -274,8 +292,8 @@ ${URGENCY_RULE}
 For each concept: name (2 to 5 words naming the reason, like "Holiday photos" or "Lunch-break visit"); angle (the framework: Problem Agitate Solve, Before After Bridge, Scenario or Direct offer); why (1 to 2 sentences: the customer's real motivation); primary_short (40 to 70 words) and primary_medium (90 to 140 words), both the same reason: hook first on its own line, short paragraphs separated by a blank line, call to action last on its own line, use the business name where natural.
 headlines: 5, each under 40 characters, specific to this ad's reason (offer-led, outcome, curiosity, situation, direct action). Freebie only if the offer says free, social proof only with verified proof.
 descriptions: 3, each under 30 characters. cta: the best Meta button for where the click goes (for an Instant Form only Sign Up, Get Quote or Learn More; for a website Shop Now, Learn More or Book Now), cta_why in one sentence. overlay: text on the image, 8 words or fewer, punchy and specific (the offer or the reason), never a slogan like "Your Goals, Our Expertise".
-creative_direction: one concrete shot a phone could take: what is in frame, where, the light (good: "Close-up of a provider's gloved hands setting out a treatment tray, window light"; bad: "imagery that conveys trust and professionalism"). image_prompt: a complete prompt to paste into ChatGPT for the finished 4:5 ad image: that shot, the overlay text, the offer, brand colors and style, layout and typography. No people, faces or bodies; if they listed real photos, say "use my photo of" what it shows.
-format: "static" or "video", whichever fits the concept and their assets (static if they listed no videos). If video: video {format (UGC, talking head, B-roll, process or montage), duration, opening_visual, hook (first 1 to 3 seconds), body, cta, shots (array)}, image_prompt becomes a photorealistic vertical first-frame still, and motion_prompt says what the subject does, camera movement and pacing (no new people, objects, claims or branding). For static, video is null and motion_prompt is empty.
+creative_direction: one line naming the shot. photo: the image for this ad, one concrete scene a phone could capture at this business, matching this ad's reason (good: a family sharing a pizza at a brick-walled table; a roofer laying shingles on a sunny morning; a woman relaxing in a treatment chair with eyes closed while a provider talks; bad: "imagery that conveys trust"). Fill: subject (who or what), setting (where, with 1 or 2 real details), action (what is happening), mood (2 to 4 words), lighting, angle (camera angle and distance), details (1 sentence of extra details that make it feel real and local), text_space ("top" or "bottom", whichever the scene leaves empty). People are welcome when they make it real. No text, signs, logos or before and after in the scene. motion: 1 sentence for an 8-second video clip of that scene: what moves and how the camera moves.
+format: "static" or "video", whichever fits the concept and their assets (static if they listed no videos). If video: video {format (UGC, talking head, B-roll, process or montage), duration, opening_visual, hook (first 1 to 3 seconds), body, cta, shots (array)}, photo is the first frame. For static, video is null.
 ${emojiRule(c)} ${NO_DASHES}
 
 AD RULES FOR THIS BUSINESS (these win over everything above):
@@ -290,14 +308,19 @@ const CONCEPT = {
     name: { type: 'string' }, angle: { type: 'string' }, why: { type: 'string' },
     primary_short: { type: 'string' }, primary_medium: { type: 'string' },
     headlines: { type: 'array', items: { type: 'string' } }, descriptions: { type: 'array', items: { type: 'string' } },
-    cta: { type: 'string' }, cta_why: { type: 'string' }, overlay: { type: 'string' }, image_prompt: { type: 'string' },
-    format: { type: 'string' }, creative_direction: { type: 'string' }, motion_prompt: { type: 'string' },
+    cta: { type: 'string' }, cta_why: { type: 'string' }, overlay: { type: 'string' },
+    photo: {
+      type: 'object',
+      properties: { subject: { type: 'string' }, setting: { type: 'string' }, action: { type: 'string' }, mood: { type: 'string' }, lighting: { type: 'string' }, angle: { type: 'string' }, details: { type: 'string' }, text_space: { type: 'string' } },
+      required: ['subject', 'setting', 'action', 'mood', 'lighting', 'angle', 'details', 'text_space'],
+    },
+    format: { type: 'string' }, creative_direction: { type: 'string' }, motion: { type: 'string' },
     video: {
       type: ['object', 'null'],
       properties: { format: { type: 'string' }, duration: { type: 'string' }, opening_visual: { type: 'string' }, hook: { type: 'string' }, body: { type: 'string' }, cta: { type: 'string' }, shots: { type: 'array', items: { type: 'string' } } },
     },
   },
-  required: ['name', 'angle', 'why', 'primary_short', 'primary_medium', 'headlines', 'descriptions', 'cta', 'cta_why', 'overlay', 'image_prompt', 'format', 'creative_direction'],
+  required: ['name', 'angle', 'why', 'primary_short', 'primary_medium', 'headlines', 'descriptions', 'cta', 'cta_why', 'overlay', 'photo', 'motion', 'format', 'creative_direction'],
 };
 const ADS_SCHEMA = { type: 'object', properties: { concepts: { type: 'array', items: CONCEPT }, suggested_offer: { type: 'string' } }, required: ['concepts', 'suggested_offer'] };
 
@@ -613,14 +636,16 @@ function cleanConcept(x: any, plan: Plan, c: Campaign) {
   // For an Instant Form the button can't promise booking.
   let cta = clean(x?.cta, 40);
   if (plan.destination === 'instant_form' && !/^(sign up|get quote|learn more)$/i.test(cta)) cta = /quote|estimate/i.test(cta) ? 'Get Quote' : 'Sign Up';
+  const overlay = strip(clean(x?.overlay, 120));
+  const prompts = imagePrompts(x, c, plan, overlay, !!video);
   const concept = {
     name: clean(x?.name, 80), angle: clean(x?.angle, 80), why: clean(x?.why, 400),
     primary_short: strip(paragraphs(raw(x?.primary_short))), primary_medium: strip(paragraphs(raw(x?.primary_medium))),
     headlines: arr(x?.headlines, 5, 120).map(strip), descriptions: arr(x?.descriptions, 3, 80).map(strip),
-    cta, cta_why: clean(x?.cta_why, 300), overlay: strip(clean(x?.overlay, 120)),
-    image_prompt: `${clean(x?.image_prompt, 3000)}\n\n${imageRules(plan, c, !!video)}`,
+    cta, cta_why: clean(x?.cta_why, 300), overlay,
+    image_prompt: prompts.photo, design_prompt: prompts.design, broll_prompt: prompts.broll,
     format: video ? 'video' : 'static', creative_direction: clean(x?.creative_direction, 300),
-    motion_prompt: video ? `${clean(x?.motion_prompt, 1200)}\n\n${imageRules(plan, c, true)}` : '',
+    motion_prompt: video ? `${prompts.broll}${video.shots.length ? `\nShots, one clip each: ${video.shots.join('; ')}.` : ''}` : '',
     video,
     warnings: [] as string[],
   };

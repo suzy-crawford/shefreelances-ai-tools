@@ -148,7 +148,7 @@ function makePlan(c: Campaign) {
       'No promises about how someone will look ("Look 10 years younger").',
       'Lead with the offer and the experience, with confident, warm language.',
       'Only quote reviews about the staff or the experience, never reviews that describe results.',
-      'Use real photos of the space and the team where possible. Never describe a person for an AI to generate.',
+      'Use real photos of the space and the team where possible. AI images can show people during a visit, never as a result or as a real client.',
     );
     if (WEIGHT_LOSS.test(text)) rules.push('For weight loss: no body, scale, tape measure or before and after imagery, and no pounds or sizes.');
   }

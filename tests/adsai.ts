@@ -80,8 +80,8 @@ check('ads: 5 headlines, 3 descriptions kept', ads.concepts[0].headlines.length 
 check('ads: em/en dashes replaced, no " ,"', !dash.test(JSON.stringify(ads)) && !/ ,/.test(ads.concepts[0].why), ads.concepts[0].why);
 check('ads: primary text split into paragraphs (hook first, action last)', ads.concepts[0].primary_short.split('\n\n').length >= 3 && /Tap below/.test(ads.concepts[0].primary_short.split('\n\n').pop()), ads.concepts[0].primary_short);
 check('ads: static concept has no video', ads.concepts[0].format === 'static' && ads.concepts[0].video === null && ads.concepts[0].motion_prompt === '', ads.concepts[0]);
-check('ads: video concept kept with script', ads.concepts[1].format === 'video' && ads.concepts[1].video.shots.length === 2 && ads.concepts[1].motion_prompt.startsWith('slow push') && /first frame of a vertical video/.test(ads.concepts[1].motion_prompt), ads.concepts[1]);
-check('ads: image rules appended (health + no real photos)', /No before and after images/.test(ads.concepts[0].image_prompt) && /Show no people, faces or bodies/.test(ads.concepts[0].image_prompt), ads.concepts[0].image_prompt);
+check('ads: video concept kept with script', ads.concepts[1].format === 'video' && ads.concepts[1].video.shots.length === 2 && ads.concepts[1].motion_prompt.startsWith('An 8-second vertical') && /Shots, one clip each: a; b/.test(ads.concepts[1].motion_prompt) && /first frame of a video/.test(ads.concepts[1].image_prompt), ads.concepts[1]);
+check('ads: image rules appended (health + no real photos)', /no before and after/.test(ads.concepts[0].image_prompt) && /no close-ups of skin/.test(ads.concepts[0].image_prompt) && !/  /.test(ads.concepts[0].image_prompt), ads.concepts[0].image_prompt);
 check('ads: suggested offer returned when offer_help', ads.suggested_offer === 'Free consult', ads.suggested_offer);
 check('ads prompt: today\'s date', /Today is [A-Z][a-z]+ \d{1,2}, \d{4}\./.test(prompt), prompt.slice(0, 300));
 check('ads prompt: says where the click goes (form, no "pick your time")', /WHERE THE CLICK GOES: An Instant Form/.test(prompt) && /Never say "pick your time"/.test(prompt), null);
@@ -364,6 +364,26 @@ check('writer: rewrite uses Claude too', g.__mock.calls[0]?.model === 'claude-so
 mock(ME, () => ({ fields: {}, services: [], offers: [], details: [] }));
 await call({ task: 'fill', site_text: 'Glow Med Spa in Austin offers facials. '.repeat(20) });
 check('writer: website fill stays on the cheap default model', g.__mock.calls[0] && !g.__mock.calls[0].model, g.__mock.calls[0]?.model);
+
+// ---- image prompts: photo (ChatGPT / Nano Banana), design (Stitch), b-roll (Flow) ----
+const pizzaPhoto = { subject: 'A family sharing a large pizza', setting: 'a cozy Italian restaurant with exposed brick and candles', action: 'kids reaching for slices', mood: 'warm and lively', lighting: 'warm golden light', angle: 'shot from slightly above', details: 'Checkered napkins and a basil garnish.', text_space: 'top' };
+mock(ME, () => ({ concepts: [concept(1, { photo: pizzaPhoto, motion: 'Slow push in as a slice is lifted.' }), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: { business_name: "Tony's Pizza", location: 'Austin, TX', product: 'pizza night', offer_text: '2 large pizzas for $24.99', brand_colors: '#B22222' } });
+let k = r.data.concepts[0];
+check('photo: formula order, 4:5, text space top', /^A family sharing a large pizza in a cozy Italian restaurant with exposed brick and candles, kids reaching for slices, warm and lively, warm golden light, shot from slightly above, photorealistic, vertical 4:5/.test(k.image_prompt) && /empty space in the top third/.test(k.image_prompt), k.image_prompt);
+check('photo: no text and no logos on the photo', /No text, words or letters anywhere/.test(k.image_prompt) && /No logos/.test(k.image_prompt) && !/Fresh skin/.test(k.image_prompt), k.image_prompt);
+check('photo: non-health allows real-looking people', /real local customers or staff/.test(k.image_prompt) && !/no close-ups of skin/.test(k.image_prompt), k.image_prompt);
+check('design: Stitch prompt has the overlay, brand color, no logo', /Design a 4:5 Facebook and Instagram feed ad for Tony's Pizza in Austin, TX/.test(k.design_prompt) && /spelled exactly: "Fresh skin"/.test(k.design_prompt) && /#B22222/.test(k.design_prompt) && /no logo/.test(k.design_prompt), k.design_prompt);
+check('broll: Flow clip with motion, no text', /^An 8-second vertical 9:16 video clip/.test(k.broll_prompt) && /Slow push in as a slice is lifted/.test(k.broll_prompt) && /No text, captions or logos/.test(k.broll_prompt), k.broll_prompt);
+check('static ad has no motion_prompt', k.motion_prompt === '', k.motion_prompt);
+check('ads prompt asks for photo parts and allows people', /subject \(who or what\), setting/.test(lastPrompt()) && /People are welcome/.test(lastPrompt()), null);
+mock(ME, () => ({ concepts: [concept(1, { photo: { subject: 'x' } }), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: { ...base, product: 'medical weight loss program' } });
+k = r.data.concepts[0];
+check('photo: thin photo falls back to the shot line, weight loss rule', /^Room shot, photorealistic/.test(k.image_prompt) && /No bodies, scales/.test(k.image_prompt), k.image_prompt);
+mock(ME, () => ({ concepts: [concept(1), concept(2), concept(3)], suggested_offer: '' }));
+r = await call({ task: 'ads', campaign: { ...base, assets_text: 'photos of our treatment room' } });
+check('photo: real photos -> build from them', /If I attached my real photos/.test(r.data.concepts[0].image_prompt), null);
 
 console.log(`\n${pass} passed, ${fails.length} failed`);
 for (const x of fails) console.log('FAIL: ' + x);
